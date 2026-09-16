@@ -1,0 +1,13 @@
+.env
+.env.*
+
+**/__pycache__
+**/*.pyc
+**/venv
+**/env
+**/node_modules
+scratch/
+api_docs.md
+complete_api.md
+post_man.json
+vertical_differentiation_specification.md
