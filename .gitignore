@@ -7,6 +7,8 @@
 **/env
 **/node_modules
 scratch/
+staticfiles/
+staticfiles_build/
 api_docs.md
 complete_api.md
 post_man.json
