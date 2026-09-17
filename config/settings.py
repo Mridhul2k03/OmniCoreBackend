@@ -1,8 +1,13 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+import dj_database_url
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env
+load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-ywb_xzv8gbnfv9tugyjj)7fc5b$^xkj$62$+y-+fc44z^t3=k&')
 DEBUG = os.environ.get('DEBUG', 'True').lower() in ['true', '1', 'yes']
@@ -93,8 +98,8 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Production PostgreSQL or local SQLite fallback
 if os.environ.get('DATABASE_URL'):
     DATABASES = {
-        "default": dj_database_url.parse(
-            dtconfig("DATABASE_URL"),
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
             conn_max_age=600,
             ssl_require=True,
         )
