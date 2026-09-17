@@ -13,6 +13,7 @@ from apps.warehouse.views import (
 
 router = DefaultRouter()
 router.register('warehouses', WarehouseViewSet, basename='warehouses')
+router.register('locations', WarehouseViewSet, basename='warehouse_locations')
 router.register('suppliers', SupplierViewSet, basename='suppliers')
 router.register('parts', SparePartViewSet, basename='parts')
 router.register('purchase-orders', PurchaseOrderViewSet, basename='purchase_orders')

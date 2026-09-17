@@ -11,4 +11,5 @@ app_name = 'fleet'
 
 urlpatterns = [
     path('vehicles/', include(router.urls)),
+    path('fleet/vehicles/', include(router.urls)),
 ]

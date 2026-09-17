@@ -1,9 +1,10 @@
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from apps.accounts.serializers import (
     CustomTokenObtainPairSerializer,
     UserSerializer,
@@ -19,8 +20,8 @@ User = get_user_model()
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
-    Login endpoint: Authenticates user and returns JWT access/refresh tokens,
-    user details, and tenant memberships.
+    Login endpoint: Authenticates user, returns JWT tokens and user payload,
+    and attaches HTTP-only cookies for seamless browser-based authentication.
     """
     serializer_class = CustomTokenObtainPairSerializer
 
@@ -39,25 +40,88 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                     ip_address=ip if ip else None,
                     user_agent=user_agent[:500],
                 )
+
+            # Set HTTP-only cookies for cookie-based auth
+            access_token = response.data.get('access')
+            refresh_token = response.data.get('refresh')
+            if access_token:
+                response.set_cookie(
+                    key='access_token',
+                    value=access_token,
+                    max_age=60 * 60,  # 1 hour
+                    httponly=True,
+                    samesite='Lax',
+                    secure=not settings.DEBUG,
+                    path='/',
+                )
+            if refresh_token:
+                response.set_cookie(
+                    key='refresh_token',
+                    value=refresh_token,
+                    max_age=7 * 24 * 60 * 60,  # 7 days
+                    httponly=True,
+                    samesite='Lax',
+                    secure=not settings.DEBUG,
+                    path='/',
+                )
+        return response
+
+
+class CustomTokenRefreshView(TokenRefreshView):
+    """
+    Token refresh endpoint: accepts refresh token from body or cookie,
+    and updates the access token cookie.
+    """
+    def post(self, request, *args, **kwargs):
+        if 'refresh' not in request.data and 'refresh_token' in request.COOKIES:
+            request.data['refresh'] = request.COOKIES['refresh_token']
+
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            access_token = response.data.get('access')
+            if access_token:
+                response.set_cookie(
+                    key='access_token',
+                    value=access_token,
+                    max_age=60 * 60,
+                    httponly=True,
+                    samesite='Lax',
+                    secure=not settings.DEBUG,
+                    path='/',
+                )
+            new_refresh = response.data.get('refresh')
+            if new_refresh:
+                response.set_cookie(
+                    key='refresh_token',
+                    value=new_refresh,
+                    max_age=7 * 24 * 60 * 60,
+                    httponly=True,
+                    samesite='Lax',
+                    secure=not settings.DEBUG,
+                    path='/',
+                )
         return response
 
 
 class LogoutView(APIView):
     """
-    Logout endpoint: Blacklists refresh token to revoke session.
+    Logout endpoint: Revokes refresh token and clears auth cookies.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        refresh_token = request.data.get('refresh')
-        if not refresh_token:
-            raise BusinessValidationError("A 'refresh' token is required to log out.", code='REFRESH_TOKEN_REQUIRED')
-        try:
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({'message': 'Logged out successfully.'})
-        except Exception:
-            raise BusinessValidationError("Token is invalid or expired.", code='INVALID_TOKEN')
+        refresh_token = request.data.get('refresh') or request.COOKIES.get('refresh_token')
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except Exception:
+                pass
+
+        response = Response({'message': 'Logged out successfully.'})
+        response.delete_cookie('access_token', path='/')
+        response.delete_cookie('refresh_token', path='/')
+        return response
 
 
 class AuthMeView(APIView):

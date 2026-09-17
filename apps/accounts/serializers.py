@@ -39,6 +39,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'slug': m.tenant.slug,
                 'status': m.tenant.status,
                 'role': m.role.name if m.role else None,
+                'role_code': m.role.code if m.role else None,
+                'permissions': m.get_all_permissions(),
                 'is_primary': m.is_primary
             })
 

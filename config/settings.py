@@ -91,16 +91,13 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # Production PostgreSQL or local SQLite fallback
-if os.environ.get('POSTGRES_DB'):
+if os.environ.get('DATABASE_URL'):
     DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('POSTGRES_DB', 'omnicore_db'),
-            'USER': os.environ.get('POSTGRES_USER', 'omnicore_user'),
-            'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'postgres'),
-            'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
-            'PORT': os.environ.get('POSTGRES_PORT', '5432'),
-        }
+        "default": dj_database_url.parse(
+            dtconfig("DATABASE_URL"),
+            conn_max_age=600,
+            ssl_require=True,
+        )
     }
 else:
     DATABASES = {
@@ -137,6 +134,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'apps.accounts.authentication.CookieJWTAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
@@ -182,14 +180,30 @@ SPECTACULAR_SETTINGS = {
     'COMPONENT_SPLIT_REQUEST': True,
 }
 
-# CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:5173').split(',')
+# CORS & CSRF Configuration
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'https://omni-core-frontend-eta.vercel.app',
+]
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
     'authorization',
     'content-type',
+    'cookie',
     'dnt',
     'origin',
     'user-agent',

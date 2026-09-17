@@ -10,6 +10,7 @@ from apps.maintenance.views import (
 
 router = DefaultRouter()
 router.register('records', MaintenanceRecordViewSet, basename='maintenance_records')
+router.register('', MaintenanceRecordViewSet, basename='maintenance_root')
 router.register('schedules', MaintenanceScheduleViewSet, basename='maintenance_schedules')
 router.register('breakdowns', BreakdownViewSet, basename='breakdowns')
 router.register('accidents', AccidentViewSet, basename='accidents')
