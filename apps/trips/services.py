@@ -65,13 +65,13 @@ class TripWorkflowService:
                     if trip.start_odometer:
                         trip.distance_km = max(0, float(trip.end_odometer) - float(trip.start_odometer))
                     if trip.vehicle:
-                        trip.vehicle.odometer = trip.end_odometer
+                        trip.vehicle.odometer_km = trip.end_odometer
 
                 # Release vehicle and driver
                 if trip.vehicle:
                     trip.vehicle.status = VehicleStatus.AVAILABLE
                     trip.vehicle.availability = VehicleAvailability.AVAILABLE
-                    trip.vehicle.save(update_fields=['status', 'availability', 'odometer'])
+                    trip.vehicle.save(update_fields=['status', 'availability', 'odometer_km'])
 
                 if trip.driver:
                     trip.driver.status = DriverStatus.AVAILABLE
