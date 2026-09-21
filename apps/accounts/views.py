@@ -11,11 +11,94 @@ from apps.accounts.serializers import (
     PasswordChangeSerializer,
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
+    RegisterSerializer,
 )
 from apps.accounts.models import UserDeviceSession
 from apps.core.exceptions import BusinessValidationError
 
 User = get_user_model()
+
+
+class RegisterView(APIView):
+    """
+    POST /api/v1/auth/register/   (alias: /api/v1/auth/signup/)
+    Step 1 of onboarding: Registers organization + root admin user atomically.
+    If is_super_admin=True, creates a platform super admin without a tenant.
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = RegisterSerializer
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
+
+        user = result['user']
+        tenant = result['tenant']
+
+        # Build user response payload
+        user_data = {
+            'id': str(user.id),
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'is_platform_admin': user.is_platform_admin,
+            'tenant_id': tenant.tenant_id if tenant else None,
+            'tenant_uuid': str(tenant.id) if tenant else None,
+            'tenant_role': 'super_admin' if user.is_platform_admin else 'tenant_admin',
+        }
+
+        # Build tenant response payload
+        tenant_data = None
+        if tenant:
+            package_tier = tenant.package.code.lower() if tenant.package else 'standard'
+            tenant_data = {
+                'id': str(tenant.id),
+                'tenant_id': tenant.tenant_id,
+                'name': tenant.company_name,
+                'company_name': tenant.company_name,
+                'slug': tenant.slug,
+                'package_tier': package_tier,
+                'status': tenant.status.lower(),
+            }
+
+        response_data = {
+            'access': result['access'],
+            'refresh': result['refresh'],
+            'user': user_data,
+            'tenant': tenant_data,
+        }
+
+        response = Response(
+            {
+                'success': True,
+                'message': 'Organization and admin account registered successfully.',
+                'data': response_data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+        # Set HTTP-only auth cookies for browser-based auth
+        response.set_cookie(
+            key='access_token',
+            value=result['access'],
+            max_age=60 * 60,
+            httponly=True,
+            samesite='Lax',
+            secure=not settings.DEBUG,
+            path='/',
+        )
+        response.set_cookie(
+            key='refresh_token',
+            value=result['refresh'],
+            max_age=7 * 24 * 60 * 60,
+            httponly=True,
+            samesite='Lax',
+            secure=not settings.DEBUG,
+            path='/',
+        )
+
+        return response
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):

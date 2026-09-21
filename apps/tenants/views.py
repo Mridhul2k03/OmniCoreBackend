@@ -196,3 +196,68 @@ class TenantMetadataView(APIView):
             'modules': sorted(list(modules))
         })
 
+
+class PlatformTenantUpgradeView(APIView):
+    """
+    POST /api/v1/platform/tenants/<tenant_id>/upgrade/
+    Platform admin endpoint to upgrade/downgrade a tenant's subscription tier.
+    """
+    permission_classes = [IsPlatformAdmin]
+
+    def post(self, request, tenant_id=None):
+        from apps.subscriptions.services import SubscriptionUpgradeService
+        from apps.core.exceptions import BusinessValidationError
+
+        # Resolve tenant by public tenant_id or UUID
+        tenant = Tenant.objects.filter(tenant_id=str(tenant_id)).first()
+        if not tenant:
+            try:
+                import uuid
+                tenant = Tenant.objects.filter(id=uuid.UUID(str(tenant_id))).first()
+            except (ValueError, TypeError):
+                tenant = None
+        if not tenant:
+            raise BusinessValidationError(
+                "Tenant not found.",
+                code='TENANT_NOT_FOUND',
+                status_code=404,
+            )
+
+        package_code = request.data.get('package_tier', '').upper() or request.data.get('package_code', '').upper()
+        billing_cycle = request.data.get('billing_cycle')
+
+        if not package_code:
+            raise BusinessValidationError(
+                "package_tier or package_code is required.",
+                code='VALIDATION_ERROR',
+            )
+
+        # Normalize billing cycle
+        if billing_cycle:
+            mapping = {'monthly': 'MONTHLY', 'annually': 'YEARLY', 'yearly': 'YEARLY'}
+            billing_cycle = mapping.get(billing_cycle.lower(), billing_cycle.upper())
+
+        result = SubscriptionUpgradeService.upgrade(
+            tenant=tenant,
+            target_package_code=package_code,
+            billing_cycle=billing_cycle,
+            actor=request.user,
+        )
+
+        from apps.subscriptions.serializers import SubscriptionSerializer
+        sub = result['subscription']
+        pkg = result.get('target_package') or getattr(sub, 'package', None)
+        mrr = float(pkg.price_monthly) if (pkg and pkg.price_monthly) else 0.0
+
+        return Response({
+            'success': True,
+            'message': result['message'],
+            'data': {
+                'tenant_id': tenant.tenant_id,
+                'package_tier': package_code.lower(),
+                'mrr': mrr,
+                'features': result['effective_features'],
+                'effective_features': result['effective_features'],
+                'subscription': SubscriptionSerializer(sub).data,
+            }
+        })
