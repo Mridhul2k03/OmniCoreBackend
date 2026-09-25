@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
+from django.db import models
 from django.core.exceptions import FieldError
 from apps.core.permissions import HasTenantAccess, HasPermission, HasFeature
 from apps.core.pagination import StandardPagination
@@ -28,7 +29,12 @@ class TenantModelViewSet(viewsets.ModelViewSet):
         tenant, _ = resolve_tenant_context(self.request)
 
         if not tenant:
-            if self.request.user and (self.request.user.is_superuser or getattr(self.request.user, 'is_platform_admin', False)):
+            user = self.request.user
+            if user and (
+                getattr(user, 'is_superuser', False) or
+                getattr(user, 'is_platform_admin', False) or
+                getattr(user, 'platform_role', None) == 'SUPER_ADMIN'
+            ):
                 return queryset
             return queryset.none()
 
@@ -54,10 +60,24 @@ class TenantModelViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         tenant, _ = resolve_tenant_context(self.request)
         if not tenant:
-            raise BusinessValidationError(
-                detail="A valid tenant context is required to create this resource.",
-                code='TENANT_REQUIRED'
-            )
+            user = self.request.user
+            if user and (
+                getattr(user, 'is_superuser', False) or
+                getattr(user, 'is_platform_admin', False) or
+                getattr(user, 'platform_role', None) == 'SUPER_ADMIN'
+            ):
+                tenant_id = self.request.data.get('tenant') or self.request.data.get('tenant_id')
+                if tenant_id:
+                    from apps.tenants.models import Tenant
+                    tenant = Tenant.objects.filter(
+                        models.Q(id__iexact=str(tenant_id).strip()) |
+                        models.Q(tenant_id__iexact=str(tenant_id).strip())
+                    ).first()
+            if not tenant:
+                raise BusinessValidationError(
+                    detail="A valid tenant context is required to create this resource.",
+                    code='TENANT_REQUIRED'
+                )
         
         save_kwargs = {'tenant': tenant}
         if hasattr(serializer.Meta.model, 'created_by'):

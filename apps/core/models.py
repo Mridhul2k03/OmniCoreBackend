@@ -74,16 +74,17 @@ class SoftDeleteModel(models.Model):
         self.save(update_fields=['is_deleted', 'deleted_at'])
 
 
-class TenantOwnedModel(TimeStampedModel, SoftDeleteModel):
+class TenantBaseModel(TimeStampedModel, SoftDeleteModel):
     """
     Abstract base model for all tenant-scoped business entities in OmniCore.
-    Enforces tenant association, created_by attribution, and composite indexing.
+    Enforces tenant association, created_at/updated_at timestamps, created_by attribution,
+    and composite indexing.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         'tenants.Tenant',
         on_delete=models.CASCADE,
-        related_name='%(app_label)s_%(class)s_set',
+        related_name="%(class)ss",
         db_index=True
     )
     created_by = models.ForeignKey(
@@ -100,3 +101,8 @@ class TenantOwnedModel(TimeStampedModel, SoftDeleteModel):
             models.Index(fields=['tenant', 'created_at']),
             models.Index(fields=['tenant', 'is_deleted']),
         ]
+
+
+# Backward compatibility alias
+TenantOwnedModel = TenantBaseModel
+

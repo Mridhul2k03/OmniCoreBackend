@@ -6,6 +6,12 @@ def resolve_tenant_context(request):
     """
     Core function to resolve the active tenant and tenant user membership.
     Works seamlessly across Django middleware and DRF API request lifecycles.
+
+    Multi-Tenant Scoping Rules:
+    - Inspects 'X-Tenant-ID' in request headers (or META / query params).
+    - If present, validates and binds request.tenant to the corresponding Tenant instance.
+    - For Super Admins (is_platform_admin=True, is_superuser=True, or role='SUPER_ADMIN'),
+      allows cross-tenant queries if X-Tenant-ID is omitted or set to 'all'.
     """
     if hasattr(request, '_tenant_resolved') and request._tenant_resolved:
         return getattr(request, 'tenant', None), getattr(request, 'tenant_user', None)
@@ -18,6 +24,12 @@ def resolve_tenant_context(request):
 
     from apps.tenants.models import Tenant, TenantUser
 
+    is_super = (
+        getattr(user, 'is_superuser', False) or
+        getattr(user, 'is_platform_admin', False) or
+        getattr(user, 'platform_role', None) == 'SUPER_ADMIN'
+    )
+
     # Look for tenant in headers or query params
     tenant_header = None
     if hasattr(request, 'headers'):
@@ -28,10 +40,17 @@ def resolve_tenant_context(request):
         tenant_header = request.GET.get('tenant_id')
 
     if tenant_header:
+        tenant_val = str(tenant_header).strip()
+        if is_super and tenant_val.lower() == 'all':
+            request.tenant = None
+            request.tenant_user = None
+            request._tenant_resolved = True
+            return None, None
+
         tenant = Tenant.objects.filter(
-            models.Q(tenant_id__iexact=str(tenant_header).strip()) |
-            models.Q(slug__iexact=str(tenant_header).strip()) |
-            models.Q(id__iexact=str(tenant_header).strip())
+            models.Q(id__iexact=tenant_val) |
+            models.Q(tenant_id__iexact=tenant_val) |
+            models.Q(slug__iexact=tenant_val)
         ).first()
 
         if tenant:
@@ -41,13 +60,21 @@ def resolve_tenant_context(request):
                 is_active=True
             ).select_related('tenant', 'role').first()
 
-            if tenant_user or user.is_superuser or getattr(user, 'is_platform_admin', False):
+            if tenant_user or is_super:
                 request.tenant = tenant
                 request.tenant_user = tenant_user
                 request._tenant_resolved = True
                 return tenant, tenant_user
 
-    # Fallback to user's primary or first active membership
+    # If tenant_header is omitted or not found:
+    # Super Admins: cross-tenant access allowed when omitted
+    if is_super:
+        request.tenant = None
+        request.tenant_user = None
+        request._tenant_resolved = True
+        return None, None
+
+    # Fallback to user's primary or first active membership for standard tenant users
     primary_membership = TenantUser.objects.filter(
         user=user,
         is_active=True
@@ -65,9 +92,16 @@ def resolve_tenant_context(request):
     return None, None
 
 
-class TenantResolutionMiddleware(MiddlewareMixin):
+class TenantHeaderMiddleware(MiddlewareMixin):
     """
-    Django middleware wrapper for resolving tenant context on incoming HTTP requests.
+    Middleware inspecting 'X-Tenant-ID' header, validating and binding request.tenant.
+    For Super Admins (is_platform_admin=True or role='SUPER_ADMIN'), allows cross-tenant
+    queries if X-Tenant-ID is omitted or set to 'all'.
     """
     def process_request(self, request):
         resolve_tenant_context(request)
+
+
+# Backward compatibility alias
+TenantResolutionMiddleware = TenantHeaderMiddleware
+

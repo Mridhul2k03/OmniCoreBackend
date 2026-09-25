@@ -16,6 +16,11 @@ class StandardResponseRenderer(JSONRenderer):
         if response and (response.status_code == 204 or getattr(response, 'streaming', False)):
             return super().render(data, accepted_media_type, renderer_context)
 
+        # Auth and token endpoints adhere directly to their SimpleJWT & Auth contract
+        request = renderer_context.get('request') if renderer_context else None
+        if request and hasattr(request, 'path') and '/auth/' in request.path:
+            return super().render(data, accepted_media_type, renderer_context)
+
         # Check if already standardized (errors or custom payloads)
         if isinstance(data, dict) and 'success' in data:
             return super().render(data, accepted_media_type, renderer_context)

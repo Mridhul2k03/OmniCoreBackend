@@ -21,10 +21,12 @@ TIER_MRR_MAP = {
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     Custom JWT serializer that embeds tenant memberships and platform roles.
+    Token payload includes: user_id, email, is_platform_admin, tenant_id.
     """
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
+        token['user_id'] = str(user.id)
         token['email'] = user.email
         token['full_name'] = user.full_name
         token['is_platform_admin'] = user.is_platform_admin
@@ -35,6 +37,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         primary_membership = TenantUser.objects.filter(
             user=user, is_active=True, is_primary=True
         ).select_related('tenant', 'role').first()
+        if not primary_membership:
+            primary_membership = TenantUser.objects.filter(
+                user=user, is_active=True
+            ).select_related('tenant', 'role').first()
 
         if primary_membership:
             token['tenant_id'] = str(primary_membership.tenant.id)
@@ -56,28 +62,54 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             is_active=True
         ).select_related('tenant', 'role')
 
+        primary_membership = memberships.filter(is_primary=True).first() or memberships.first()
+
         tenants_data = []
         for m in memberships:
+            t = m.tenant
+            pkg = t.package.code.lower() if t.package else 'standard'
             tenants_data.append({
-                'id': str(m.tenant.id),
-                'tenant_id': m.tenant.tenant_id,
-                'company_name': m.tenant.company_name,
-                'slug': m.tenant.slug,
-                'status': m.tenant.status,
+                'id': str(t.id),
+                'tenant_id': t.tenant_id,
+                'name': t.company_name,
+                'company_name': t.company_name,
+                'slug': t.slug,
+                'package_tier': pkg,
+                'status': t.status.lower(),
                 'role': m.role.name if m.role else None,
                 'role_code': m.role.code if m.role else None,
                 'permissions': m.get_all_permissions(),
-                'is_primary': m.is_primary
+                'is_primary': m.is_primary,
             })
 
+        if primary_membership:
+            tenant_id = str(primary_membership.tenant.id)
+            tenant_role = primary_membership.role.code.lower() if primary_membership.role else 'tenant_user'
+            permissions = primary_membership.get_all_permissions()
+        elif user.is_superuser or user.is_platform_admin:
+            tenant_id = None
+            tenant_role = 'super_admin'
+            permissions = ['*']
+        else:
+            tenant_id = None
+            tenant_role = 'none'
+            permissions = []
+
+        data['mfa_required'] = bool(user.is_mfa_enabled)
         data['user'] = {
             'id': str(user.id),
             'email': user.email,
             'first_name': user.first_name,
             'last_name': user.last_name,
             'full_name': user.full_name,
-            'is_platform_admin': user.is_platform_admin,
-            'platform_role': user.platform_role,
+            'is_platform_user': bool(user.is_platform_admin),
+            'is_platform_admin': bool(user.is_platform_admin),
+            'platform_role': user.platform_role if user.platform_role != 'NONE' else None,
+            'tenant_id': tenant_id,
+            'tenant_role': tenant_role,
+            'permissions': permissions,
+            'mfa_enabled': bool(user.is_mfa_enabled),
+            'status': 'active' if user.is_active else 'inactive',
         }
         data['tenants'] = tenants_data
         return data
@@ -206,3 +238,12 @@ class RegisterSerializer(serializers.Serializer):
                     'access': str(tokens.access_token),
                     'refresh': str(tokens),
                 }
+
+
+class MfaVerifySerializer(serializers.Serializer):
+    """
+    Serializer for MFA verification: accepts email and code.
+    """
+    email = serializers.EmailField(required=True)
+    code = serializers.CharField(required=True, min_length=4, max_length=16)
+

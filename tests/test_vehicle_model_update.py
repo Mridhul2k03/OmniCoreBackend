@@ -284,10 +284,11 @@ class VehicleModelUpdateTests(APITestCase):
             HTTP_X_TENANT_ID=str(self.tenant.id)
         )
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data["registration_number"], "API-POST-99")
-        self.assertEqual(response.data["vin"], "1FUJBBCK4NL100200")
-        self.assertEqual(response.data["branch_name"], "Chicago Central Depot")
-        self.assertEqual(response.data["assigned_driver_name"], "Carlos Mendoza")
+        data = response.data.get("data", response.data)
+        self.assertEqual(data["registration_number"], "API-POST-99")
+        self.assertEqual(data["vin"], "1FUJBBCK4NL100200")
+        self.assertEqual(data["branch_name"], "Chicago Central Depot")
+        self.assertEqual(data["assigned_driver_name"], "Carlos Mendoza")
 
         # 2. Test GET /api/v1/fleet/vehicles/?status=all&vertical=all (must return 200 OK)
         get_response = self.client.get(
