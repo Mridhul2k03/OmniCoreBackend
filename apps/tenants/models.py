@@ -78,6 +78,35 @@ class Tenant(TimeStampedModel, SoftDeleteModel):
     def __str__(self):
         return f"{self.company_name} ({self.tenant_id})"
 
+    def save(self, *args, **kwargs):
+        if not self.tenant_id or not str(self.tenant_id).strip():
+            import random, string
+            for _ in range(30):
+                candidate = f"OCT-{''.join(random.choices(string.digits, k=6))}"
+                if not Tenant.objects.filter(tenant_id=candidate).exists():
+                    self.tenant_id = candidate
+                    break
+            if not self.tenant_id or not str(self.tenant_id).strip():
+                self.tenant_id = f"OCT-{uuid.uuid4().hex[:8].upper()}"
+
+        if not self.slug or not str(self.slug).strip():
+            from django.utils.text import slugify
+            base_slug = slugify(self.company_name) if self.company_name else "tenant"
+            if not base_slug:
+                base_slug = "tenant"
+            candidate = base_slug
+            counter = 1
+            qs = Tenant.objects.all()
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            while qs.filter(slug=candidate).exists():
+                candidate = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = candidate
+
+        super().save(*args, **kwargs)
+
+
 
 class Role(TimeStampedModel):
     """

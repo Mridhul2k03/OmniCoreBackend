@@ -51,7 +51,21 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         return token
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['email'] = serializers.CharField(required=False, write_only=True)
+        self.fields['username'] = serializers.CharField(required=False, write_only=True)
+        self.fields['password'] = serializers.CharField(required=True, write_only=True)
+
     def validate(self, attrs):
+        raw_email = attrs.get('email') or attrs.get('username')
+        if not raw_email:
+            raise serializers.ValidationError({'email': ['Email or username is required.']})
+
+        email = str(raw_email).strip()
+        attrs['email'] = email
+        attrs[self.username_field] = email
+
         data = super().validate(attrs)
         user = self.user
 

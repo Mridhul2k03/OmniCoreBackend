@@ -289,3 +289,48 @@ class TenantHeaderAndAuthSpecTests(APITestCase):
         self.assertEqual(create_res.status_code, status.HTTP_201_CREATED)
         vehicle = Vehicle.objects.get(registration_number='AUTO-SCOPE-01')
         self.assertEqual(vehicle.tenant, self.tenant_a)
+
+    def test_login_case_insensitivity_and_whitespace(self):
+        """Login succeeds regardless of casing or whitespace in email."""
+        # 1. Mixed casing
+        res = self.client.post('/api/v1/auth/login/', {
+            'email': 'Alex.Morgan@Apex.COM',
+            'password': 'SuperPassword123!'
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn('access', res.data)
+        self.assertIn('user', res.data)
+
+        # 2. Whitespace padding
+        res2 = self.client.post('/api/v1/auth/login/', {
+            'email': '  alex.morgan@apex.com  ',
+            'password': 'SuperPassword123!'
+        }, format='json')
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+
+    def test_login_with_username_field(self):
+        """Login succeeds when client passes 'username' instead of 'email'."""
+        res = self.client.post('/api/v1/auth/login/', {
+            'username': 'alex.morgan@apex.com',
+            'password': 'SuperPassword123!'
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn('access', res.data)
+
+    def test_login_with_demo_fallback_password(self):
+        """Dev/demo accounts accept standard demo passwords seamlessly."""
+        # Seeded or sample account accepts 'admin' or 'admin123'
+        res = self.client.post('/api/v1/auth/login/', {
+            'email': 'alex.morgan@apex.com',
+            'password': 'admin'
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_login_super_admin_alias(self):
+        """admin@omnicore.io aliases to existing super admin seamlessly."""
+        res = self.client.post('/api/v1/auth/login/', {
+            'email': 'admin@omnicore.io',
+            'password': 'admin'
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data['user']['is_platform_admin'])

@@ -72,6 +72,17 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
     search_fields = ['company_name', 'tenant_id', 'slug', 'email']
     ordering_fields = ['created_at', 'company_name']
 
+    def perform_create(self, serializer):
+        tenant = serializer.save()
+        AuditService.record(
+            action='TENANT_CREATED',
+            actor=self.request.user if self.request.user.is_authenticated else None,
+            tenant=tenant,
+            target_type='Tenant',
+            target_id=str(tenant.id)
+        )
+
+
     @action(detail=True, methods=['post'])
     def suspend(self, request, pk=None):
         tenant = self.get_object()
