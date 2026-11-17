@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal, ROUND_HALF_UP
 from apps.finance.models import (
     Invoice,
     InvoiceItem,
@@ -61,7 +62,14 @@ class FuelTransactionSerializer(serializers.ModelSerializer):
             'transaction_date', 'fuel_station', 'fuel_liters', 'rate_per_liter',
             'total_cost', 'odometer_reading'
         ]
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'total_cost']
+
+    def validate(self, attrs):
+        liters = attrs.get('fuel_liters')
+        rate = attrs.get('rate_per_liter')
+        if liters is not None and rate is not None:
+            attrs['total_cost'] = (liters * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        return attrs
 
 
 class TollTransactionSerializer(serializers.ModelSerializer):
