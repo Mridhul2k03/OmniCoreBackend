@@ -2,12 +2,14 @@ import random
 import string
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework.exceptions import ValidationError
 from apps.courier.models import (
     Shipment, ShipmentStatus, TrackingEvent, Hub, HubShipment,
     SortingRecord, SortingStatus, Delivery, DeliveryStatus, DeliveryAttempt,
     ProofOfDelivery, VerificationMethod, CourierAgent, CourierCommission,
-    CourierExpense, CourierPayout, PayoutStatus, ShipmentPickup, PickupStatus
+    CourierExpense, CourierPayout, PayoutStatus, ShipmentPickup, PickupStatus,
+    HubConvoy, HubConvoyStatus
 )
 from apps.audit.services import AuditService
 
@@ -107,7 +109,14 @@ class ShipmentWorkflowService:
             pickup.actual_pickup_time = timezone.now()
             pickup.notes = notes
             pickup.save(update_fields=['status', 'actual_pickup_time', 'notes', 'updated_at'])
-            cls.transition_status(shipment, ShipmentStatus.PICKED_UP, actor=actor, description=f"Pickup leg #{pickup.sequence} completed")
+            if not shipment.pickups.exclude(status=PickupStatus.COMPLETED).exists():
+                cls.transition_status(shipment, ShipmentStatus.PICKED_UP, actor=actor, description="All scheduled pickup stops completed")
+            else:
+                TrackingEvent.objects.create(
+                    tenant=shipment.tenant, shipment=shipment, event_type="PICKUP_STOP_COMPLETED",
+                    status=shipment.status, location=pickup.address, actor=actor,
+                    description=f"Pickup stop #{pickup.sequence} completed; remaining stops are still open.",
+                )
         elif action == "FAIL":
             pickup.status = PickupStatus.FAILED
             pickup.failure_reason = reason
@@ -188,6 +197,76 @@ class HubSortingService:
         return record
 
 
+class HubConvoyService:
+    @classmethod
+    @transaction.atomic
+    def dispatch(cls, convoy: HubConvoy, actor=None):
+        if convoy.status != HubConvoyStatus.PLANNED:
+            raise ValidationError('Only planned convoys can depart.')
+        if not convoy.vehicle_id or not convoy.driver_id:
+            raise ValidationError('Assign both a vehicle and a driver before dispatching this convoy.')
+        if convoy.vehicle.status != 'AVAILABLE' or convoy.vehicle.availability != 'AVAILABLE':
+            raise ValidationError('The selected vehicle is not available for convoy dispatch.')
+        if convoy.driver.status != 'AVAILABLE':
+            raise ValidationError('The selected driver is not available for convoy dispatch.')
+        shipments = list(convoy.shipments.select_for_update())
+        if not shipments:
+            raise ValidationError('A convoy must contain at least one shipment.')
+        if any(s.current_hub_id != convoy.origin_hub_id or s.status != ShipmentStatus.SORTED for s in shipments):
+            raise ValidationError('Every shipment must be sorted at the convoy origin before departure.')
+
+        now = timezone.now()
+        convoy.status = HubConvoyStatus.DEPARTED
+        convoy.departed_at = now
+        convoy.save(update_fields=['status', 'departed_at', 'updated_at'])
+        convoy.vehicle.status = 'ON_TRIP'
+        convoy.vehicle.availability = 'ASSIGNED'
+        convoy.vehicle.save(update_fields=['status', 'availability', 'updated_at'])
+        convoy.driver.status = 'ON_TRIP'
+        convoy.driver.current_vehicle = convoy.vehicle
+        convoy.driver.save(update_fields=['status', 'current_vehicle', 'updated_at'])
+        for shipment in shipments:
+            HubShipment.objects.filter(tenant=convoy.tenant, shipment=shipment, hub=convoy.origin_hub).update(
+                status='DISPATCHED', departure_time=now,
+            )
+            shipment.status = ShipmentStatus.IN_TRANSIT
+            shipment.save(update_fields=['status', 'updated_at'])
+            TrackingEvent.objects.create(
+                tenant=convoy.tenant, shipment=shipment, event_type='CONVOY_DEPARTED',
+                status=shipment.status, location=convoy.origin_hub.name, actor=actor,
+                description=f'{convoy.convoy_number} departed for {convoy.destination_hub.name}.',
+            )
+        return convoy
+
+    @classmethod
+    @transaction.atomic
+    def arrive(cls, convoy: HubConvoy, actor=None):
+        if convoy.status != HubConvoyStatus.DEPARTED:
+            raise ValidationError('Only departed convoys can be marked as arrived.')
+        now = timezone.now()
+        convoy.status = HubConvoyStatus.ARRIVED
+        convoy.arrived_at = now
+        convoy.save(update_fields=['status', 'arrived_at', 'updated_at'])
+        convoy.vehicle.status = 'AVAILABLE'
+        convoy.vehicle.availability = 'AVAILABLE'
+        convoy.vehicle.save(update_fields=['status', 'availability', 'updated_at'])
+        convoy.driver.status = 'AVAILABLE'
+        convoy.driver.save(update_fields=['status', 'updated_at'])
+        for shipment in convoy.shipments.select_for_update():
+            shipment.current_hub = convoy.destination_hub
+            shipment.status = ShipmentStatus.DESTINATION_HUB
+            shipment.save(update_fields=['current_hub', 'status', 'updated_at'])
+            HubShipment.objects.create(
+                tenant=convoy.tenant, shipment=shipment, hub=convoy.destination_hub, status='RECEIVED',
+            )
+            TrackingEvent.objects.create(
+                tenant=convoy.tenant, shipment=shipment, event_type='CONVOY_ARRIVED',
+                status=shipment.status, location=convoy.destination_hub.name, actor=actor,
+                description=f'{convoy.convoy_number} arrived at {convoy.destination_hub.name}.',
+            )
+        return convoy
+
+
 class ProofOfDeliveryService:
     @classmethod
     @transaction.atomic
@@ -255,13 +334,15 @@ class ProofOfDeliveryService:
         if delivery.agent:
             commission_amt = delivery.agent.commission_rate_per_delivery
             if commission_amt > 0:
-                CourierCommission.objects.create(
+                CourierCommission.objects.get_or_create(
                     tenant=delivery.tenant,
-                    agent=delivery.agent,
                     delivery=delivery,
-                    shipment=shipment,
-                    commission_amount=commission_amt,
-                    status="EARNED"
+                    defaults={
+                        'agent': delivery.agent,
+                        'shipment': shipment,
+                        'commission_amount': commission_amt,
+                        'status': 'EARNED',
+                    },
                 )
 
         AuditService.record(
@@ -280,10 +361,22 @@ class CourierPayoutService:
     @transaction.atomic
     def process_agent_payout(cls, agent: CourierAgent, period_start, period_end, idempotency_key=None, actor=None):
         tenant = agent.tenant
+        period_start = parse_date(str(period_start)) if isinstance(period_start, str) else period_start
+        period_end = parse_date(str(period_end)) if isinstance(period_end, str) else period_end
+        if not period_start or not period_end:
+            raise ValidationError('Provide valid payout period start and end dates.')
+        if period_start > period_end:
+            raise ValidationError('Payout period start must be on or before its end date.')
         if idempotency_key:
             existing = CourierPayout.objects.filter(tenant=tenant, idempotency_key=idempotency_key).first()
             if existing:
                 return existing
+
+        existing_period = CourierPayout.objects.filter(
+            tenant=tenant, agent=agent, period_start=period_start, period_end=period_end,
+        ).exclude(status=PayoutStatus.REJECTED).first()
+        if existing_period:
+            return existing_period
 
         commissions = CourierCommission.objects.filter(
             tenant=tenant,
@@ -301,6 +394,8 @@ class CourierPayoutService:
         )
         deductions = sum([e.amount for e in expenses])
         net = gross - deductions
+        if net < 0:
+            raise ValidationError('Approved expenses exceed earned commissions for this payout period.')
 
         payout_suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         payout_number = f"PAY-{timezone.now().strftime('%Y%m')}-{payout_suffix}"
@@ -314,20 +409,35 @@ class CourierPayoutService:
             net_payable=net,
             period_start=period_start,
             period_end=period_end,
-            status=PayoutStatus.APPROVED,
+            status=PayoutStatus.PENDING,
             idempotency_key=idempotency_key,
-            paid_at=timezone.now()
         )
 
-        # Mark commissions settled
-        commissions.update(status="SETTLED")
-
         AuditService.record(
-            action="COURIER_PAYOUT_APPROVED",
+            action="COURIER_PAYOUT_REQUESTED",
             actor=actor,
             tenant=tenant,
             target_type="CourierPayout",
             target_id=str(payout.id),
-            metadata={"net_payable": str(net), "status": PayoutStatus.APPROVED}
+            metadata={"net_payable": str(net), "status": PayoutStatus.PENDING}
+        )
+        return payout
+
+    @classmethod
+    @transaction.atomic
+    def pay_payout(cls, payout: CourierPayout, actor=None):
+        if payout.status != PayoutStatus.APPROVED:
+            raise ValidationError('Approve the payout before disbursing funds.')
+        payout.status = PayoutStatus.PAID
+        payout.paid_at = timezone.now()
+        payout.save(update_fields=['status', 'paid_at', 'updated_at'])
+        CourierCommission.objects.filter(
+            tenant=payout.tenant, agent=payout.agent, status='EARNED',
+            date__range=[payout.period_start, payout.period_end],
+        ).update(status='SETTLED')
+        AuditService.record(
+            action='COURIER_PAYOUT_PAID', actor=actor, tenant=payout.tenant,
+            target_type='CourierPayout', target_id=str(payout.id),
+            metadata={'net_payable': str(payout.net_payable), 'status': PayoutStatus.PAID},
         )
         return payout

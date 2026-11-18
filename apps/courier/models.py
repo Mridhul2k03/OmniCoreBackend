@@ -248,7 +248,9 @@ class ShipmentPickup(TenantOwnedModel):
     """
     shipment = models.ForeignKey(Shipment, on_delete=models.CASCADE, related_name='pickups')
     pickup_location = models.ForeignKey(PickupLocation, null=True, blank=True, on_delete=models.SET_NULL)
+    location_name = models.CharField(max_length=150, blank=True)
     sequence = models.PositiveIntegerField(default=1)
+    parcel_count = models.PositiveIntegerField(default=1)
     address = models.TextField()
     contact_name = models.CharField(max_length=150)
     contact_phone = models.CharField(max_length=30)
@@ -295,6 +297,33 @@ class SortingRecord(TenantOwnedModel):
     status = models.CharField(max_length=30, choices=SortingStatus.choices, default=SortingStatus.RECEIVED)
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
     notes = models.TextField(blank=True)
+
+
+class HubConvoyStatus(models.TextChoices):
+    PLANNED = 'PLANNED', _('Planned')
+    DEPARTED = 'DEPARTED', _('Departed')
+    ARRIVED = 'ARRIVED', _('Arrived')
+    CANCELLED = 'CANCELLED', _('Cancelled')
+
+
+class HubConvoy(TenantOwnedModel):
+    """A planned line-haul movement of sorted shipments between courier hubs."""
+    convoy_number = models.CharField(max_length=50, db_index=True)
+    origin_hub = models.ForeignKey(Hub, on_delete=models.PROTECT, related_name='outbound_convoys')
+    destination_hub = models.ForeignKey(Hub, on_delete=models.PROTECT, related_name='inbound_convoys')
+    vehicle = models.ForeignKey('fleet.Vehicle', null=True, blank=True, on_delete=models.SET_NULL, related_name='courier_convoys')
+    driver = models.ForeignKey('drivers.Driver', null=True, blank=True, on_delete=models.SET_NULL, related_name='courier_convoys')
+    shipments = models.ManyToManyField(Shipment, related_name='courier_convoys')
+    status = models.CharField(max_length=20, choices=HubConvoyStatus.choices, default=HubConvoyStatus.PLANNED, db_index=True)
+    scheduled_departure = models.DateTimeField(null=True, blank=True)
+    departed_at = models.DateTimeField(null=True, blank=True)
+    arrived_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ('tenant', 'convoy_number')
+        indexes = [models.Index(fields=['tenant', 'status'])]
 
 
 class TrackingEvent(TenantOwnedModel):

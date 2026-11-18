@@ -4,11 +4,12 @@ from apps.courier.views import (
     HubViewSet, CourierAgentViewSet, ShipmentViewSet,
     ShipmentPickupViewSet, SortingRecordViewSet, DeliveryViewSet,
     ProofOfDeliveryViewSet, CourierCommissionViewSet,
-    CourierExpenseViewSet, CourierPayoutViewSet
+    CourierExpenseViewSet, CourierPayoutViewSet, HubConvoyViewSet
 )
 
 router = DefaultRouter()
 router.register(r'hubs', HubViewSet, basename='courier-hub')
+router.register(r'convoys', HubConvoyViewSet, basename='courier-convoy')
 router.register(r'agents', CourierAgentViewSet, basename='courier-agent')
 router.register(r'shipments', ShipmentViewSet, basename='courier-shipment')
 router.register(r'pickups', ShipmentPickupViewSet, basename='courier-pickup')
