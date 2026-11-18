@@ -29,16 +29,17 @@ class ShuttleStopSerializer(serializers.ModelSerializer):
 class ShuttleRouteSerializer(serializers.ModelSerializer):
     stops = ShuttleStopSerializer(many=True, read_only=True)
     organization_name = serializers.ReadOnlyField(source='organization.name')
+    organization_type = serializers.ReadOnlyField(source='organization.org_type')
 
     class Meta:
         model = ShuttleRoute
         fields = [
-            'id', 'organization', 'organization_name', 'base_route',
+            'id', 'organization', 'organization_name', 'organization_type', 'base_route',
             'route_name', 'route_code', 'direction', 'start_location',
             'end_location', 'default_vehicle', 'default_driver',
             'is_active', 'stops', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'organization_name', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization_name', 'organization_type', 'created_at', 'updated_at']
 
 
 class ShuttleScheduleSerializer(serializers.ModelSerializer):
