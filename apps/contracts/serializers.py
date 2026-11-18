@@ -1,12 +1,23 @@
+import uuid
+from django.utils import timezone
 from rest_framework import serializers
 from apps.contracts.models import Tender, Proposal, Contract, ContractDocument, ContractAllocation, ContractTrip
 
 
 class TenderSerializer(serializers.ModelSerializer):
+    tender_number = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model = Tender
         fields = ['id', 'tender_number', 'title', 'issuing_authority', 'submission_deadline', 'estimated_value', 'status', 'scope_of_work', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+    def create(self, validated_data):
+        number = str(validated_data.get('tender_number') or '').strip()
+        if not number:
+            number = f"TND-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
+        validated_data['tender_number'] = number
+        return super().create(validated_data)
 
 
 class ProposalSerializer(serializers.ModelSerializer):
@@ -35,6 +46,7 @@ class ContractAllocationSerializer(serializers.ModelSerializer):
 
 
 class ContractSerializer(serializers.ModelSerializer):
+    contract_number = serializers.CharField(required=False, allow_blank=True)
     customer_name = serializers.CharField(source='customer.company_name', read_only=True)
     documents = ContractDocumentSerializer(many=True, read_only=True)
     allocations = ContractAllocationSerializer(many=True, read_only=True)
@@ -48,3 +60,10 @@ class ContractSerializer(serializers.ModelSerializer):
             'terms_and_conditions', 'documents', 'allocations', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
+
+    def create(self, validated_data):
+        number = str(validated_data.get('contract_number') or '').strip()
+        if not number:
+            number = f"CTR-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
+        validated_data['contract_number'] = number
+        return super().create(validated_data)

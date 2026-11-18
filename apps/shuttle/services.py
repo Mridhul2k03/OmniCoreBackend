@@ -64,6 +64,14 @@ class ShuttleOperationService:
     def record_attendance(cls, trip: ShuttleTrip, passenger: PassengerProfile, status: str, stop=None, verified_by=None, notes=""):
         if status not in dict(AttendanceStatus.choices):
             raise ValidationError(f"Invalid attendance status: {status}")
+        if trip.status not in [ShuttleTripStatus.SCHEDULED, ShuttleTripStatus.DISPATCHED, ShuttleTripStatus.IN_PROGRESS]:
+            raise ValidationError('Attendance can only be recorded for a scheduled or active trip.')
+        if not passenger.is_active:
+            raise ValidationError('Attendance cannot be recorded for an inactive passenger.')
+        if not passenger.route_assignments.filter(tenant=trip.tenant, shuttle_route=trip.shuttle_route, is_active=True).exists():
+            raise ValidationError('Passenger is not actively assigned to this trip route.')
+        if stop and stop.shuttle_route_id != trip.shuttle_route_id:
+            raise ValidationError('Attendance stop must belong to the trip route.')
 
         attendance, created = ShuttleAttendance.objects.update_or_create(
             tenant=trip.tenant,
@@ -75,6 +83,15 @@ class ShuttleOperationService:
                 'verified_by': verified_by,
                 'notes': notes,
             }
+        )
+        AuditService.record(
+            action='SHUTTLE_ATTENDANCE_RECORDED', actor=verified_by,
+            tenant=trip.tenant, target_type='ShuttleAttendance',
+            target_id=str(attendance.id),
+            metadata={
+                'trip_id': str(trip.id), 'passenger_id': str(passenger.id),
+                'status': status, 'created': created,
+            },
         )
         return attendance
 

@@ -16,6 +16,12 @@ from apps.audit.services import AuditService
 from apps.core.exceptions import BusinessValidationError
 
 
+PACKAGE_FEATURE_MINIMUM_TIER = {
+    # Contracts are part of the Standard package and inherited by higher tiers.
+    'contracts': {'STANDARD', 'CORPORATE', 'ENTERPRISE'},
+}
+
+
 def tenant_has_feature(tenant, feature_code: str) -> bool:
     r"""
     Evaluates effective feature entitlement with override precedence:
@@ -39,12 +45,37 @@ def tenant_has_feature(tenant, feature_code: str) -> bool:
         else:
             return override.enabled
 
-    # 2. Check cached standard entitlement
+    # Explicit synchronized entitlement rows take precedence over package defaults.
+    # This also preserves intentional per-tenant disabled states.
+    entitlement = TenantFeature.objects.filter(
+        tenant=tenant, feature__code=feature_code
+    ).first()
+    if entitlement:
+        cache.set(f"tenant_feature_{tenant.id}_{feature_code}", entitlement.is_enabled, timeout=300)
+        return entitlement.is_enabled
+
+    package_code = ''
+    subscription = Subscription.objects.filter(tenant=tenant).select_related('package').first()
+    if subscription:
+        package_code = subscription.package.code
+    elif tenant.package_id:
+        package_code = tenant.package.code
+
+    if package_code in PACKAGE_FEATURE_MINIMUM_TIER.get(feature_code, set()):
+        cache.set(f"tenant_feature_{tenant.id}_{feature_code}", True, timeout=300)
+        return True
+
+    if feature_code == 'contracts' and subscription and subscription.addons.filter(code='addon_contracts', is_active=True).exists():
+        cache.set(f"tenant_feature_{tenant.id}_{feature_code}", True, timeout=300)
+        return True
+
+    # 3. Check cached standard entitlement
     cache_key = f"tenant_feature_{tenant.id}_{feature_code}"
     cached_result = cache.get(cache_key)
     if cached_result is not None:
         return cached_result
 
+    # 4. Check legacy or explicitly assigned package/add-on features.
     has_entitlement = TenantFeature.objects.filter(
         tenant=tenant,
         feature__code=feature_code,
