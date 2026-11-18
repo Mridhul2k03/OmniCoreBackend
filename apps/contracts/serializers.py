@@ -2,6 +2,8 @@ import uuid
 from django.utils import timezone
 from rest_framework import serializers
 from apps.contracts.models import Tender, Proposal, Contract, ContractDocument, ContractAllocation, ContractTrip
+from apps.crm.models import Customer
+from apps.core.middleware import resolve_tenant_context
 
 
 class TenderSerializer(serializers.ModelSerializer):
@@ -67,3 +69,23 @@ class ContractSerializer(serializers.ModelSerializer):
             number = f"CTR-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
         validated_data['contract_number'] = number
         return super().create(validated_data)
+
+
+class TenderAwardSerializer(serializers.Serializer):
+    customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    total_contract_value = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    minimum_monthly_commitment = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False, default=0)
+    payment_terms_days = serializers.IntegerField(min_value=0, required=False, default=30)
+
+    def validate_customer(self, customer):
+        tenant, _ = resolve_tenant_context(self.context['request'])
+        if customer.tenant_id != tenant.id:
+            raise serializers.ValidationError('Select a customer in this tenant workspace.')
+        return customer
+
+    def validate(self, attrs):
+        if attrs['end_date'] < attrs['start_date']:
+            raise serializers.ValidationError({'end_date': 'End date must be on or after the start date.'})
+        return attrs
