@@ -19,7 +19,7 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = [
-            'id', 'name', 'company_name', 'email', 'phone', 'lead_source',
+            'id', 'name', 'company_name', 'email', 'phone', 'vertical_interest', 'lead_source',
             'status', 'estimated_value', 'notes', 'converted_customer',
             'converted_customer_name', 'created_at'
         ]

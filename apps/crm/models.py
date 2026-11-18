@@ -62,6 +62,7 @@ class Lead(TenantOwnedModel):
     company_name = models.CharField(max_length=255, blank=True)
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=30, blank=True)
+    vertical_interest = models.CharField(max_length=50, blank=True, default='')
     lead_source = models.CharField(max_length=100, default='WEBSITE')
     status = models.CharField(max_length=30, choices=LeadStatus.choices, default=LeadStatus.NEW, db_index=True)
     estimated_value = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)

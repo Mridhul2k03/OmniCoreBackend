@@ -19,6 +19,9 @@ from apps.core.exceptions import BusinessValidationError
 PACKAGE_FEATURE_MINIMUM_TIER = {
     # Contracts are part of the Standard package and inherited by higher tiers.
     'contracts': {'STANDARD', 'CORPORATE', 'ENTERPRISE'},
+    # Warehouse inventory is included from Corporate upward; Basic and Standard
+    # tenants can enable it with the warehouse add-on.
+    'warehouse': {'CORPORATE', 'ENTERPRISE'},
 }
 
 
@@ -104,12 +107,19 @@ def get_tenant_effective_features(tenant) -> dict:
 
     now = timezone.now()
 
+    subscription = Subscription.objects.filter(tenant=tenant).select_related('package').first()
+    package = subscription.package if subscription else tenant.package
+
     # Package features
     package_features = []
-    if tenant.package:
+    if package:
         package_features = list(
-            Feature.objects.filter(packages=tenant.package).values_list('code', flat=True)
+            Feature.objects.filter(packages=package).values_list('code', flat=True)
         )
+        if package.code in PACKAGE_FEATURE_MINIMUM_TIER.get('warehouse', set()) and 'warehouse' not in package_features:
+            package_features.append('warehouse')
+        if package.code in PACKAGE_FEATURE_MINIMUM_TIER.get('contracts', set()) and 'contracts' not in package_features:
+            package_features.append('contracts')
 
     # Addon features
     addon_features = []
@@ -162,15 +172,23 @@ def sync_tenant_features(tenant):
     """
     Synchronizes TenantFeature rows according to the tenant's package and subscription add-ons.
     """
-    if not tenant.package:
+    subscription = Subscription.objects.filter(tenant=tenant).select_related('package').first()
+    package = subscription.package if subscription else tenant.package
+    if not package:
         return
 
     features_to_enable = set()
 
     # Features from package
-    package_features = Feature.objects.filter(packages=tenant.package)
+    package_features = Feature.objects.filter(packages=package)
     for feat in package_features:
         features_to_enable.add(feat)
+
+    for feature_code, minimum_tiers in PACKAGE_FEATURE_MINIMUM_TIER.items():
+        if package.code in minimum_tiers:
+            feature = Feature.objects.filter(code=feature_code).first()
+            if feature:
+                features_to_enable.add(feature)
 
     # Features from active subscription addons
     if hasattr(tenant, 'subscription') and tenant.subscription:

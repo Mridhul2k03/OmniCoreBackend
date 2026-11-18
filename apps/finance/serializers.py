@@ -43,6 +43,19 @@ class InvoiceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'paid_amount', 'balance_due', 'created_at', 'updated_at']
 
+    def create(self, validated_data):
+        subtotal = validated_data.get('subtotal', Decimal('0.00'))
+        tax_amount = validated_data.get('tax_amount', Decimal('0.00'))
+        total_amount = validated_data.get('total_amount')
+        if total_amount is None or total_amount == 0:
+            total_amount = subtotal + tax_amount
+        validated_data['total_amount'] = total_amount
+        validated_data['balance_due'] = max(
+            Decimal('0.00'),
+            total_amount - validated_data.get('paid_amount', Decimal('0.00'))
+        )
+        return super().create(validated_data)
+
 
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
