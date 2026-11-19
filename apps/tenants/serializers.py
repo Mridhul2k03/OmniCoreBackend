@@ -43,6 +43,12 @@ class TenantSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'tenant_id', 'slug', 'status', 'activated_at', 'created_at', 'updated_at']
 
 
+class TenantProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tenant
+        fields = ['company_name', 'email', 'phone', 'address']
+
+
 class TenantUserSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
     user_name = serializers.CharField(source='user.full_name', read_only=True)

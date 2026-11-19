@@ -196,6 +196,13 @@ def sync_tenant_features(tenant):
         for feat in addon_features:
             features_to_enable.add(feat)
 
+    # Turn off package/add-on feature rows that are no longer included. Without
+    # this, removing an add-on leaves a stale enabled TenantFeature behind.
+    TenantFeature.objects.filter(
+        tenant=tenant,
+        source__in=['PACKAGE', 'ADDON'],
+    ).exclude(feature__in=features_to_enable).update(is_enabled=False)
+
     # Create or update TenantFeature records
     for feat in features_to_enable:
         TenantFeature.objects.update_or_create(
