@@ -4,7 +4,7 @@ from apps.website.views import (
     TenantWebsiteViewSet, WebsitePageViewSet, WebsiteSectionViewSet,
     WebsiteServiceViewSet, WebsiteBlogPostViewSet, WebsiteFAQViewSet,
     WebsiteBookingConfigurationViewSet,
-    PublicWebsiteConfigView, PublicCourierBookingView, PublicTaxiBookingView,
+    PublicWebsiteConfigView, PublicBookingView, PublicCourierBookingView, PublicTaxiBookingView,
     PublicBusBookingView, PublicTransportRequestView, PublicShipmentTrackingView
 )
 
@@ -20,6 +20,7 @@ router.register(r'booking-config', WebsiteBookingConfigurationViewSet, basename=
 # Public unauthenticated routes
 public_patterns = [
     path('<slug:tenant_slug>/', PublicWebsiteConfigView.as_view(), name='public-website-config'),
+    path('<slug:tenant_slug>/book/', PublicBookingView.as_view(), name='public-booking'),
     path('<slug:tenant_slug>/courier-booking/', PublicCourierBookingView.as_view(), name='public-courier-booking'),
     path('<slug:tenant_slug>/taxi-booking/', PublicTaxiBookingView.as_view(), name='public-taxi-booking'),
     path('<slug:tenant_slug>/bus-booking/', PublicBusBookingView.as_view(), name='public-bus-booking'),

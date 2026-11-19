@@ -87,6 +87,7 @@ STANDARD_PERMISSIONS = [
     ('shuttle.attendance', 'Record Shuttle Attendance', 'shuttle'),
     # Dynamic Website & Social
     ('website.manage', 'Manage Dynamic Mini-Website', 'website'),
+    ('marketing.view', 'View Marketing Campaigns', 'marketing'),
     ('marketing.social', 'Manage Social Media Campaigns', 'marketing'),
     # Warehouse Cross-Dock & Consolidation
     ('warehouse.crossdock', 'Operate Warehouse Cross-Docking & Consolidation', 'warehouse'),
@@ -128,7 +129,8 @@ def seed_platform_roles_and_permissions():
             'warehouse.view', 'inventory.adjust', 'po.create', 'maintenance.view'
         ],
         TenantRoleCode.SALES_CRM_USER: [
-            'crm.view', 'crm.manage', 'contract.view', 'contract.create', 'trip.view'
+            'crm.view', 'crm.manage', 'contract.view', 'contract.create', 'trip.view',
+            'marketing.view', 'marketing.social'
         ],
         TenantRoleCode.DRIVER_FIELD_USER: [
             'trip.view', 'vehicle.view'

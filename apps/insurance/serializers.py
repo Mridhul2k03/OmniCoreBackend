@@ -17,11 +17,16 @@ class InsurancePolicySerializer(serializers.ModelSerializer):
 
 class InsuranceClaimSerializer(serializers.ModelSerializer):
     policy_number = serializers.CharField(source='policy.policy_number', read_only=True)
+    vehicle_reg = serializers.SerializerMethodField()
+
+    def get_vehicle_reg(self, obj):
+        vehicle = obj.policy.vehicle if obj.policy_id and obj.policy else None
+        return vehicle.registration_number if vehicle else ''
 
     class Meta:
         model = InsuranceClaim
         fields = [
-            'id', 'claim_number', 'policy', 'policy_number', 'incident_date',
+            'id', 'claim_number', 'policy', 'policy_number', 'vehicle_reg', 'incident_date',
             'claim_amount', 'approved_amount', 'status', 'surveyor_name', 'notes', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
