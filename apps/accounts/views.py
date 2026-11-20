@@ -22,7 +22,7 @@ from apps.accounts.serializers import (
     PasswordResetConfirmSerializer,
 )
 from apps.accounts.models import UserDeviceSession, RegistrationOTP
-from apps.core.exceptions import BusinessValidationError
+from apps.core.exceptions import BusinessValidationError, OmniCoreAPIException
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -52,7 +52,10 @@ class RegistrationOTPView(APIView):
         email = data['admin_email'].strip().lower()
         user = User.objects.filter(email__iexact=email).first()
         if user and user.is_active:
-            return Response({'message': 'If this email can be registered, a verification code has been sent.'})
+            raise OmniCoreAPIException(
+                detail='An account with this email already exists. Sign in or reset your password.',
+                code='ACCOUNT_ALREADY_EXISTS', status_code=status.HTTP_409_CONFLICT,
+            )
 
         now = timezone.now()
         if user:
@@ -60,7 +63,10 @@ class RegistrationOTPView(APIView):
             # Never repurpose an existing inactive account (for example, an employee
             # invitation or an administrator-disabled account) as a public signup.
             if not previous_challenge:
-                return Response({'message': 'If this email can be registered, a verification code has been sent.'})
+                raise OmniCoreAPIException(
+                    detail='An account with this email already exists. Sign in or reset your password.',
+                    code='ACCOUNT_ALREADY_EXISTS', status_code=status.HTTP_409_CONFLICT,
+                )
             if previous_challenge and previous_challenge.last_sent_at > now - timedelta(seconds=60):
                 return Response({'message': 'If this email can be registered, a verification code has been sent.'})
         code = f'{secrets.randbelow(1_000_000):06d}'
