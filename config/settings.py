@@ -176,6 +176,8 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
+        'registration_request': '5/hour',
+        'registration_verify': '10/hour',
     },
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',

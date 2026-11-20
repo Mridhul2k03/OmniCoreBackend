@@ -2,6 +2,7 @@ import uuid
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 
 
 class PlatformRole(models.TextChoices):
@@ -85,6 +86,18 @@ class User(AbstractUser):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}".strip() or self.email
+
+
+class RegistrationOTP(models.Model):
+    """Short-lived, single-use email verification challenge for signup."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='registration_otp')
+    registration_data = models.JSONField()
+    code_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    last_sent_at = models.DateTimeField(default=timezone.now)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class UserDeviceSession(models.Model):
