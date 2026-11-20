@@ -1,8 +1,9 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from apps.crm.models import Customer, Lead, Inquiry, Quotation, Communication, FollowUp
 
 
-class CustomerSerializer(serializers.ModelSerializer):
+class CustomerSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = [
@@ -13,7 +14,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
-class LeadSerializer(serializers.ModelSerializer):
+class LeadSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     converted_customer_name = serializers.CharField(source='converted_customer.company_name', read_only=True)
 
     class Meta:

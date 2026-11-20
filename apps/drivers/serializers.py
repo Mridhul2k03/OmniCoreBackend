@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from apps.drivers.models import Driver, DriverDocument, DriverAssignment, Attendance, DriverIncident
 
 
@@ -27,7 +28,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class DriverSerializer(serializers.ModelSerializer):
+class DriverSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
     documents = DriverDocumentSerializer(many=True, read_only=True)
     incidents = DriverIncidentSerializer(many=True, read_only=True)
