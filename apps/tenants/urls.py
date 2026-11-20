@@ -7,6 +7,7 @@ from apps.tenants.views import (
     RoleViewSet,
     PermissionListView,
     TenantMetadataView,
+    TenantProfileView,
 )
 
 router = DefaultRouter()
@@ -23,5 +24,6 @@ urlpatterns = [
     path('platform/', include(platform_router.urls)),
     path('tenants/permissions/', PermissionListView.as_view(), name='permission_list'),
     path('tenants/metadata/', TenantMetadataView.as_view(), name='tenant_metadata'),
+    path('tenants/profile/', TenantProfileView.as_view(), name='tenant_profile'),
     path('tenants/', include(router.urls)),
 ]

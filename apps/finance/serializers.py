@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal, ROUND_HALF_UP
 from apps.finance.models import (
     Invoice,
     InvoiceItem,
@@ -42,6 +43,19 @@ class InvoiceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'paid_amount', 'balance_due', 'created_at', 'updated_at']
 
+    def create(self, validated_data):
+        subtotal = validated_data.get('subtotal', Decimal('0.00'))
+        tax_amount = validated_data.get('tax_amount', Decimal('0.00'))
+        total_amount = validated_data.get('total_amount')
+        if total_amount is None or total_amount == 0:
+            total_amount = subtotal + tax_amount
+        validated_data['total_amount'] = total_amount
+        validated_data['balance_due'] = max(
+            Decimal('0.00'),
+            total_amount - validated_data.get('paid_amount', Decimal('0.00'))
+        )
+        return super().create(validated_data)
+
 
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
@@ -61,7 +75,14 @@ class FuelTransactionSerializer(serializers.ModelSerializer):
             'transaction_date', 'fuel_station', 'fuel_liters', 'rate_per_liter',
             'total_cost', 'odometer_reading'
         ]
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'total_cost']
+
+    def validate(self, attrs):
+        liters = attrs.get('fuel_liters')
+        rate = attrs.get('rate_per_liter')
+        if liters is not None and rate is not None:
+            attrs['total_cost'] = (liters * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        return attrs
 
 
 class TollTransactionSerializer(serializers.ModelSerializer):

@@ -16,6 +16,15 @@ from apps.audit.services import AuditService
 from apps.core.exceptions import BusinessValidationError
 
 
+PACKAGE_FEATURE_MINIMUM_TIER = {
+    # Contracts are part of the Standard package and inherited by higher tiers.
+    'contracts': {'STANDARD', 'CORPORATE', 'ENTERPRISE'},
+    # Warehouse inventory is included from Corporate upward; Basic and Standard
+    # tenants can enable it with the warehouse add-on.
+    'warehouse': {'CORPORATE', 'ENTERPRISE'},
+}
+
+
 def tenant_has_feature(tenant, feature_code: str) -> bool:
     r"""
     Evaluates effective feature entitlement with override precedence:
@@ -39,12 +48,37 @@ def tenant_has_feature(tenant, feature_code: str) -> bool:
         else:
             return override.enabled
 
-    # 2. Check cached standard entitlement
+    # Explicit synchronized entitlement rows take precedence over package defaults.
+    # This also preserves intentional per-tenant disabled states.
+    entitlement = TenantFeature.objects.filter(
+        tenant=tenant, feature__code=feature_code
+    ).first()
+    if entitlement:
+        cache.set(f"tenant_feature_{tenant.id}_{feature_code}", entitlement.is_enabled, timeout=300)
+        return entitlement.is_enabled
+
+    package_code = ''
+    subscription = Subscription.objects.filter(tenant=tenant).select_related('package').first()
+    if subscription:
+        package_code = subscription.package.code
+    elif tenant.package_id:
+        package_code = tenant.package.code
+
+    if package_code in PACKAGE_FEATURE_MINIMUM_TIER.get(feature_code, set()):
+        cache.set(f"tenant_feature_{tenant.id}_{feature_code}", True, timeout=300)
+        return True
+
+    if feature_code == 'contracts' and subscription and subscription.addons.filter(code='addon_contracts', is_active=True).exists():
+        cache.set(f"tenant_feature_{tenant.id}_{feature_code}", True, timeout=300)
+        return True
+
+    # 3. Check cached standard entitlement
     cache_key = f"tenant_feature_{tenant.id}_{feature_code}"
     cached_result = cache.get(cache_key)
     if cached_result is not None:
         return cached_result
 
+    # 4. Check legacy or explicitly assigned package/add-on features.
     has_entitlement = TenantFeature.objects.filter(
         tenant=tenant,
         feature__code=feature_code,
@@ -73,12 +107,19 @@ def get_tenant_effective_features(tenant) -> dict:
 
     now = timezone.now()
 
+    subscription = Subscription.objects.filter(tenant=tenant).select_related('package').first()
+    package = subscription.package if subscription else tenant.package
+
     # Package features
     package_features = []
-    if tenant.package:
+    if package:
         package_features = list(
-            Feature.objects.filter(packages=tenant.package).values_list('code', flat=True)
+            Feature.objects.filter(packages=package).values_list('code', flat=True)
         )
+        if package.code in PACKAGE_FEATURE_MINIMUM_TIER.get('warehouse', set()) and 'warehouse' not in package_features:
+            package_features.append('warehouse')
+        if package.code in PACKAGE_FEATURE_MINIMUM_TIER.get('contracts', set()) and 'contracts' not in package_features:
+            package_features.append('contracts')
 
     # Addon features
     addon_features = []
@@ -131,21 +172,36 @@ def sync_tenant_features(tenant):
     """
     Synchronizes TenantFeature rows according to the tenant's package and subscription add-ons.
     """
-    if not tenant.package:
+    subscription = Subscription.objects.filter(tenant=tenant).select_related('package').first()
+    package = subscription.package if subscription else tenant.package
+    if not package:
         return
 
     features_to_enable = set()
 
     # Features from package
-    package_features = Feature.objects.filter(packages=tenant.package)
+    package_features = Feature.objects.filter(packages=package)
     for feat in package_features:
         features_to_enable.add(feat)
+
+    for feature_code, minimum_tiers in PACKAGE_FEATURE_MINIMUM_TIER.items():
+        if package.code in minimum_tiers:
+            feature = Feature.objects.filter(code=feature_code).first()
+            if feature:
+                features_to_enable.add(feature)
 
     # Features from active subscription addons
     if hasattr(tenant, 'subscription') and tenant.subscription:
         addon_features = Feature.objects.filter(addons__in=tenant.subscription.addons.all())
         for feat in addon_features:
             features_to_enable.add(feat)
+
+    # Turn off package/add-on feature rows that are no longer included. Without
+    # this, removing an add-on leaves a stale enabled TenantFeature behind.
+    TenantFeature.objects.filter(
+        tenant=tenant,
+        source__in=['PACKAGE', 'ADDON'],
+    ).exclude(feature__in=features_to_enable).update(is_enabled=False)
 
     # Create or update TenantFeature records
     for feat in features_to_enable:

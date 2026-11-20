@@ -14,6 +14,7 @@ from apps.tenants.serializers import (
     PermissionSerializer,
     VerticalSerializer,
     TenantProvisionSerializer,
+    TenantProfileSerializer,
 )
 from apps.tenants.services import TenantProvisioningService
 from apps.core.permissions import IsPlatformAdmin, HasTenantAccess, HasPermission
@@ -100,6 +101,34 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
         )
         return Response({'message': f"Tenant '{tenant.company_name}' has been activated."})
 
+    @action(detail=True, methods=['patch'], url_path='verticals')
+    def verticals(self, request, pk=None):
+        """Replace a tenant's licensed vertical list using UI vertical codes."""
+        codes = request.data.get('vertical_codes')
+        if not isinstance(codes, list) or any(not isinstance(code, str) or not code.strip() for code in codes):
+            return Response(
+                {'code': 'VALIDATION_ERROR', 'message': 'vertical_codes must be a list of non-empty strings.',
+                 'fields': {'vertical_codes': ['Provide a list of vertical codes.']}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        normalized_codes = list(dict.fromkeys(code.strip().lower() for code in codes))
+        verticals = []
+        for code in normalized_codes:
+            vertical, _ = Vertical.objects.get_or_create(
+                code=code,
+                defaults={'name': code.replace('_', ' ').title()},
+            )
+            if not vertical.is_active:
+                return Response(
+                    {'code': 'VALIDATION_ERROR', 'message': f"Vertical '{code}' is inactive.",
+                     'fields': {'vertical_codes': [f"'{code}' is not available."]}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            verticals.append(vertical)
+        tenant = self.get_object()
+        tenant.verticals.set(verticals)
+        return Response(TenantSerializer(tenant, context=self.get_serializer_context()).data)
+
 
 class TenantUserViewSet(viewsets.ModelViewSet):
     """
@@ -109,6 +138,23 @@ class TenantUserViewSet(viewsets.ModelViewSet):
     permission_classes = [HasTenantAccess, HasPermission]
     required_permission = 'tenant.manage'
     pagination_class = StandardPagination
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+            membership = getattr(request, 'tenant_user', None)
+            if not membership or not membership.is_primary or not membership.role or membership.role.code != 'TENANT_ADMIN':
+                from apps.core.exceptions import PermissionDeniedError
+                raise PermissionDeniedError(
+                    detail='Only the primary tenant administrator can manage employee access.',
+                    code='PRIMARY_ADMIN_REQUIRED',
+                )
+
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {'code': 'INVITATION_REQUIRED', 'message': 'Create employee accounts through the HR invitation flow.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     def get_queryset(self):
         tenant = getattr(self.request, 'tenant', None)
@@ -130,6 +176,10 @@ class RoleViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         tenant = getattr(self.request, 'tenant', None)
+        # Backfill the Staff template once for tenants created before that role existed.
+        if not Role.objects.filter(tenant=None, code='STAFF').exists():
+            from apps.tenants.services import seed_platform_roles_and_permissions
+            seed_platform_roles_and_permissions()
         return Role.objects.filter(models.Q(tenant=None) | models.Q(tenant=tenant)).prefetch_related('role_permissions__permission')
 
 
@@ -195,4 +245,19 @@ class TenantMetadataView(APIView):
             'permissions': user_perms,
             'modules': sorted(list(modules))
         })
+
+
+class TenantProfileView(APIView):
+    """Read and update the active tenant's editable organization profile."""
+    permission_classes = [HasTenantAccess, HasPermission]
+    required_permission = 'tenant.manage'
+
+    def get(self, request):
+        return Response(TenantSerializer(request.tenant).data)
+
+    def patch(self, request):
+        serializer = TenantProfileSerializer(request.tenant, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        tenant = serializer.save()
+        return Response(TenantSerializer(tenant).data)
 

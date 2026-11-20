@@ -73,6 +73,7 @@ STANDARD_PERMISSIONS = [
     ('insurance.manage', 'Manage Insurance & Claims', 'insurance'),
     # Audit & Settings
     ('audit.view', 'View Audit Logs', 'audit'),
+    ('reports.view', 'View Reports & Analytics', 'reports'),
     ('tenant.manage', 'Manage Tenant Settings', 'tenants'),
     # Courier & Express Delivery
     ('courier.view', 'View Courier Shipments & Hubs', 'courier'),
@@ -87,6 +88,7 @@ STANDARD_PERMISSIONS = [
     ('shuttle.attendance', 'Record Shuttle Attendance', 'shuttle'),
     # Dynamic Website & Social
     ('website.manage', 'Manage Dynamic Mini-Website', 'website'),
+    ('marketing.view', 'View Marketing Campaigns', 'marketing'),
     ('marketing.social', 'Manage Social Media Campaigns', 'marketing'),
     # Warehouse Cross-Dock & Consolidation
     ('warehouse.crossdock', 'Operate Warehouse Cross-Docking & Consolidation', 'warehouse'),
@@ -111,15 +113,15 @@ def seed_platform_roles_and_permissions():
         TenantRoleCode.OPERATIONS_MANAGER: [
             'vehicle.view', 'driver.view', 'driver.assign', 'trip.view',
             'trip.create', 'trip.dispatch', 'trip.complete', 'contract.view',
-            'maintenance.view', 'warehouse.view', 'crm.view'
+            'maintenance.view', 'warehouse.view', 'crm.view', 'reports.view'
         ],
         TenantRoleCode.FLEET_MANAGER: [
             'vehicle.view', 'vehicle.create', 'vehicle.update', 'driver.view',
-            'driver.assign', 'maintenance.view', 'maintenance.create', 'insurance.view'
+            'driver.assign', 'maintenance.view', 'maintenance.create', 'insurance.view', 'reports.view'
         ],
         TenantRoleCode.FINANCE_USER: [
             'finance.view', 'invoice.create', 'payment.record', 'pnl.view',
-            'trip.view', 'contract.view'
+            'trip.view', 'contract.view', 'reports.view'
         ],
         TenantRoleCode.HR_USER: [
             'hr.view', 'payroll.view', 'payroll.manage', 'driver.view'
@@ -128,10 +130,14 @@ def seed_platform_roles_and_permissions():
             'warehouse.view', 'inventory.adjust', 'po.create', 'maintenance.view'
         ],
         TenantRoleCode.SALES_CRM_USER: [
-            'crm.view', 'crm.manage', 'contract.view', 'contract.create', 'trip.view'
+            'crm.view', 'crm.manage', 'contract.view', 'contract.create', 'trip.view',
+            'marketing.view', 'marketing.social'
         ],
         TenantRoleCode.DRIVER_FIELD_USER: [
             'trip.view', 'vehicle.view'
+        ],
+        TenantRoleCode.STAFF: [
+            'trip.view'
         ],
     }
 

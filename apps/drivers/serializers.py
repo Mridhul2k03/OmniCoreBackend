@@ -3,9 +3,11 @@ from apps.drivers.models import Driver, DriverDocument, DriverAssignment, Attend
 
 
 class DriverDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.FileField(source='file', read_only=True)
+
     class Meta:
         model = DriverDocument
-        fields = ['id', 'driver', 'document_type', 'document_number', 'issue_date', 'expiry_date', 'file_path', 'is_verified', 'created_at']
+        fields = ['id', 'driver', 'document_name', 'document_type', 'document_number', 'issue_date', 'expiry_date', 'file', 'file_url', 'file_path', 'is_verified', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
@@ -30,14 +32,15 @@ class DriverSerializer(serializers.ModelSerializer):
     documents = DriverDocumentSerializer(many=True, read_only=True)
     incidents = DriverIncidentSerializer(many=True, read_only=True)
     current_vehicle_reg = serializers.CharField(source='current_vehicle.registration_number', read_only=True)
+    avatar = serializers.ImageField(source='image', read_only=True)
 
     class Meta:
         model = Driver
         fields = [
-            'id', 'first_name', 'last_name', 'full_name', 'phone', 'email',
+            'id', 'first_name', 'last_name', 'full_name', 'phone', 'email', 'address', 'experience_years', 'safety_score',
             'license_number', 'license_type', 'license_expiry', 'status',
             'current_vehicle', 'current_vehicle_reg', 'emergency_contact_name',
             'emergency_contact_phone', 'date_of_joining', 'notes',
-            'documents', 'incidents', 'created_at', 'updated_at'
+            'image', 'avatar', 'documents', 'incidents', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']

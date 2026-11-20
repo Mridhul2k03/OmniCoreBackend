@@ -15,7 +15,7 @@ router.register('inquiries', InquiryViewSet, basename='inquiries')
 router.register('quotations', QuotationViewSet, basename='quotations')
 router.register('communications', CommunicationViewSet, basename='communications')
 router.register('follow-ups', FollowUpViewSet, basename='follow_ups')
-router.register('', CustomerViewSet, basename='customers')
+router.register('customers', CustomerViewSet, basename='customers')
 
 app_name = 'crm'
 

@@ -43,6 +43,12 @@ class TenantSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'tenant_id', 'slug', 'status', 'activated_at', 'created_at', 'updated_at']
 
 
+class TenantProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tenant
+        fields = ['company_name', 'email', 'phone', 'address']
+
+
 class TenantUserSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
     user_name = serializers.CharField(source='user.full_name', read_only=True)
@@ -55,7 +61,22 @@ class TenantUserSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_email', 'user_name', 'role', 'role_name',
             'is_primary', 'is_active', 'permissions', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'is_primary', 'user']
+
+    def validate_role(self, role):
+        current = getattr(self, 'instance', None)
+        if current and current.is_primary and role and current.role_id != role.id:
+            raise serializers.ValidationError('The primary administrator role cannot be changed here.')
+        if role and role.code == 'TENANT_ADMIN':
+            if not current or not current.is_primary or current.role_id != role.id:
+                raise serializers.ValidationError('The primary administrator role cannot be assigned to another member.')
+        return role
+
+    def validate_is_active(self, value):
+        current = getattr(self, 'instance', None)
+        if current and current.is_primary and not value:
+            raise serializers.ValidationError('The primary administrator membership cannot be deactivated here.')
+        return value
 
     def get_permissions(self, obj):
         return obj.get_all_permissions()

@@ -40,6 +40,8 @@ class Booking(TenantOwnedModel):
     pickup_location = models.CharField(max_length=255)
     dropoff_location = models.CharField(max_length=255)
     cargo_type = models.CharField(max_length=100)
+    vertical = models.CharField(max_length=50, default='freight_logistics', db_index=True)
+    vehicle_type = models.CharField(max_length=50, default='heavy_truck', db_index=True)
     cargo_weight_kg = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     scheduled_date = models.DateField(db_index=True)
     commercial_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)

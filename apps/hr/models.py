@@ -1,4 +1,5 @@
 import uuid
+from django.utils import timezone
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
@@ -34,12 +35,12 @@ class Employee(TenantOwnedModel):
     designation = models.CharField(max_length=100)
     date_of_joining = models.DateField()
     status = models.CharField(max_length=30, choices=EmployeeStatus.choices, default=EmployeeStatus.ACTIVE, db_index=True)
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name='employee_profile'
+        related_name='employee_profiles'
     )
 
     class Meta:
@@ -54,6 +55,26 @@ class Employee(TenantOwnedModel):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
+
+
+class EmployeeInvitation(TenantOwnedModel):
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        ACCEPTED = 'ACCEPTED', _('Accepted')
+        REVOKED = 'REVOKED', _('Revoked')
+        EXPIRED = 'EXPIRED', _('Expired')
+
+    employee = models.OneToOneField(Employee, on_delete=models.CASCADE, related_name='invitation')
+    role = models.ForeignKey('tenants.Role', on_delete=models.PROTECT, related_name='employee_invitations')
+    invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='sent_employee_invitations')
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField(db_index=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True)
+
+    @property
+    def is_expired(self):
+        return self.status == self.Status.PENDING and self.expires_at <= timezone.now()
 
 
 class LeaveRequest(TenantOwnedModel):
