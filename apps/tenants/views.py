@@ -139,6 +139,23 @@ class TenantUserViewSet(viewsets.ModelViewSet):
     required_permission = 'tenant.manage'
     pagination_class = StandardPagination
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+            membership = getattr(request, 'tenant_user', None)
+            if not membership or not membership.is_primary or not membership.role or membership.role.code != 'TENANT_ADMIN':
+                from apps.core.exceptions import PermissionDeniedError
+                raise PermissionDeniedError(
+                    detail='Only the primary tenant administrator can manage employee access.',
+                    code='PRIMARY_ADMIN_REQUIRED',
+                )
+
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {'code': 'INVITATION_REQUIRED', 'message': 'Create employee accounts through the HR invitation flow.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     def get_queryset(self):
         tenant = getattr(self.request, 'tenant', None)
         if not tenant:
@@ -159,6 +176,10 @@ class RoleViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         tenant = getattr(self.request, 'tenant', None)
+        # Backfill the Staff template once for tenants created before that role existed.
+        if not Role.objects.filter(tenant=None, code='STAFF').exists():
+            from apps.tenants.services import seed_platform_roles_and_permissions
+            seed_platform_roles_and_permissions()
         return Role.objects.filter(models.Q(tenant=None) | models.Q(tenant=tenant)).prefetch_related('role_permissions__permission')
 
 

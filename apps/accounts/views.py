@@ -159,6 +159,7 @@ class AuthMeView(APIView):
                 'status': tenant.status,
                 'package': tenant.package.name if tenant.package else None,
                 'activated_at': tenant.activated_at,
+                'is_primary': bool(tenant_user and tenant_user.is_primary),
             }
             if tenant_user:
                 role_data = {

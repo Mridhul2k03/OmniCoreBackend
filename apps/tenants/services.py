@@ -136,6 +136,9 @@ def seed_platform_roles_and_permissions():
         TenantRoleCode.DRIVER_FIELD_USER: [
             'trip.view', 'vehicle.view'
         ],
+        TenantRoleCode.STAFF: [
+            'trip.view'
+        ],
     }
 
     for role_code, perms in role_specs.items():
