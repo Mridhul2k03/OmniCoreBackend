@@ -2,6 +2,7 @@ from django.urls import path
 from apps.accounts.views import (
     CustomTokenObtainPairView,
     CustomTokenRefreshView,
+    MfaVerifyView,
     LogoutView,
     AuthMeView,
     PasswordChangeView,

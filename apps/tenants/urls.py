@@ -7,6 +7,8 @@ from apps.tenants.views import (
     RoleViewSet,
     PermissionListView,
     TenantMetadataView,
+    PlatformTenantUpgradeView,
+    TenantProfileView,
 )
 
 router = DefaultRouter()
