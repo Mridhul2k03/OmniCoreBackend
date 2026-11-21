@@ -98,14 +98,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # Production PostgreSQL or local SQLite fallback
-if 'test' in sys.argv:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': ':memory:',
-        }
-    }
-elif os.environ.get('DATABASE_URL'):
+if os.environ.get('DATABASE_URL'):
     DATABASES = {
         'default': dj_database_url.config(
             default=os.environ.get('DATABASE_URL'),
@@ -120,6 +113,15 @@ else:
             'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
+
+
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -214,6 +216,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:8000',
     'https://omnicore.io',
     'https://omni-core-frontend-eta.vercel.app',
+    'https://omni-core-backend.vercel.app'
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
@@ -228,7 +231,11 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:3000',
     'https://omnicore.io',
     'https://omni-core-frontend-eta.vercel.app',
+    'https://omni-core-backend.vercel.app'
 ]
+
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Celery & Redis Configuration
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
