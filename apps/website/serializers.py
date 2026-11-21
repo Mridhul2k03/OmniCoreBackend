@@ -1,4 +1,6 @@
+from decimal import Decimal
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from apps.website.models import (
     TenantWebsite, WebsitePage, WebsiteSection, WebsiteService,
     WebsiteBlogPost, WebsiteFAQ, WebsiteBookingConfiguration
@@ -49,10 +51,16 @@ class WebsiteBookingConfigurationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class TenantWebsiteSerializer(serializers.ModelSerializer):
+class TenantWebsiteSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     pages = WebsitePageSerializer(many=True, read_only=True)
     services = WebsiteServiceSerializer(many=True, read_only=True)
     booking_config = WebsiteBookingConfigurationSerializer(read_only=True)
+    faqs = serializers.SerializerMethodField()
+
+    def get_faqs(self, obj):
+        return WebsiteFAQSerializer(
+            WebsiteFAQ.objects.filter(tenant=obj.tenant).order_by('sequence'), many=True
+        ).data
 
     class Meta:
         model = TenantWebsite
@@ -60,13 +68,13 @@ class TenantWebsiteSerializer(serializers.ModelSerializer):
             'id', 'site_title', 'subdomain', 'custom_domain', 'logo_url', 'favicon_url',
             'company_name', 'tagline', 'about_text', 'contact_email', 'contact_phone',
             'address', 'theme', 'social_links', 'enabled_verticals', 'is_published',
-            'pages', 'services', 'booking_config', 'created_at', 'updated_at'
+            'pages', 'services', 'faqs', 'booking_config', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 # Public safe booking input serializers
-class PublicCourierBookingSerializer(serializers.Serializer):
+class PublicCourierBookingSerializer(PhoneNumberValidationMixin, serializers.Serializer):
     sender_name = serializers.CharField(max_length=150)
     sender_phone = serializers.CharField(max_length=30)
     sender_address = serializers.CharField()
@@ -77,13 +85,44 @@ class PublicCourierBookingSerializer(serializers.Serializer):
     delivery_address = serializers.CharField()
     delivery_city = serializers.CharField(max_length=100)
     delivery_postal_code = serializers.CharField(max_length=30)
-    service_type = serializers.CharField(default='STANDARD')
+    service_type = serializers.ChoiceField(
+        choices=('STANDARD', 'EXPRESS', 'SAME_DAY', 'OVERNIGHT'), default='STANDARD'
+    )
     weight_kg = serializers.DecimalField(max_digits=8, decimal_places=2, default=1.0)
     declared_value = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
-class PublicTaxiBookingSerializer(serializers.Serializer):
+class PublicBookingSerializer(PhoneNumberValidationMixin, serializers.Serializer):
+    SERVICE_CHOICES = (
+        ('courier_express', 'Express Parcel'),
+        ('corporate_shuttle', 'Corporate Shuttle'),
+        ('freight_logistics', 'Freight Logistics'),
+        ('cold_chain', 'Cold Chain'),
+    )
+
+    service_type = serializers.ChoiceField(choices=SERVICE_CHOICES)
+    sender_name = serializers.CharField(max_length=150)
+    sender_phone = serializers.CharField(max_length=30)
+    sender_email = serializers.EmailField(required=False, allow_blank=True)
+    sender_address = serializers.CharField()
+    sender_city = serializers.CharField(max_length=100)
+    sender_postal_code = serializers.CharField(max_length=30)
+    receiver_name = serializers.CharField(max_length=150)
+    receiver_phone = serializers.CharField(max_length=30)
+    delivery_address = serializers.CharField()
+    delivery_city = serializers.CharField(max_length=100)
+    delivery_postal_code = serializers.CharField(max_length=30)
+    pickup_time = serializers.DateTimeField(required=False, allow_null=True)
+    estimated_weight_kg = serializers.DecimalField(max_digits=8, decimal_places=2, min_value=Decimal('0.01'), default=1)
+    passenger_count = serializers.IntegerField(required=False, min_value=1, default=1)
+    cargo_description = serializers.CharField(required=False, allow_blank=True, default='')
+    temperature_range = serializers.CharField(required=False, allow_blank=True, default='')
+    coupon_code = serializers.CharField(required=False, allow_blank=True, max_length=50, default='')
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+
+
+class PublicTaxiBookingSerializer(PhoneNumberValidationMixin, serializers.Serializer):
     passenger_name = serializers.CharField(max_length=150)
     passenger_phone = serializers.CharField(max_length=30)
     pickup_address = serializers.CharField()
@@ -94,7 +133,7 @@ class PublicTaxiBookingSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
-class PublicBusBookingSerializer(serializers.Serializer):
+class PublicBusBookingSerializer(PhoneNumberValidationMixin, serializers.Serializer):
     passenger_name = serializers.CharField(max_length=150)
     passenger_phone = serializers.CharField(max_length=30)
     passenger_email = serializers.EmailField(required=False, allow_blank=True)
@@ -104,7 +143,7 @@ class PublicBusBookingSerializer(serializers.Serializer):
     dropping_point = serializers.CharField()
 
 
-class PublicTransportRequestSerializer(serializers.Serializer):
+class PublicTransportRequestSerializer(PhoneNumberValidationMixin, serializers.Serializer):
     shipper_name = serializers.CharField(max_length=150)
     shipper_phone = serializers.CharField(max_length=30)
     shipper_email = serializers.EmailField(required=False, allow_blank=True)

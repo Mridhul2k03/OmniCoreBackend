@@ -28,6 +28,9 @@ class Driver(TenantOwnedModel):
     last_name = models.CharField(max_length=100)
     phone = models.CharField(max_length=30, db_index=True)
     email = models.EmailField(blank=True)
+    address = models.CharField(max_length=255, blank=True)
+    experience_years = models.PositiveSmallIntegerField(default=0)
+    safety_score = models.PositiveSmallIntegerField(default=95)
     license_number = models.CharField(max_length=100, db_index=True)
     license_type = models.CharField(max_length=50, default='HEAVY_MOTOR_VEHICLE')
     license_expiry = models.DateField(db_index=True)
@@ -48,6 +51,7 @@ class Driver(TenantOwnedModel):
     emergency_contact_phone = models.CharField(max_length=30, blank=True)
     date_of_joining = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    image = models.ImageField(upload_to='drivers/images/', blank=True, null=True)
 
     class Meta:
         unique_together = ('tenant', 'license_number')
@@ -70,11 +74,13 @@ class DriverDocument(TenantOwnedModel):
     Regulatory and compliance documents for a driver (license, medical, background checks).
     """
     driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='documents')
+    document_name = models.CharField(max_length=100, blank=True)
     document_type = models.CharField(max_length=50)
     document_number = models.CharField(max_length=100)
     issue_date = models.DateField(null=True, blank=True)
     expiry_date = models.DateField(null=True, blank=True, db_index=True)
     file_path = models.CharField(max_length=500, blank=True)
+    file = models.FileField(upload_to='drivers/documents/', blank=True, null=True)
     is_verified = models.BooleanField(default=False)
 
     class Meta:

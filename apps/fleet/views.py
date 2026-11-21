@@ -1,5 +1,6 @@
 import django_filters
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -64,7 +65,7 @@ class VehicleFilter(django_filters.FilterSet):
 
 
 class VehicleViewSet(TenantModelViewSet):
-    queryset = Vehicle.objects.all().select_related('category', 'branch', 'assigned_driver').prefetch_related('documents')
+    queryset = Vehicle.objects.all().select_related('category').prefetch_related('documents')
     serializer_class = VehicleSerializer
     required_permission = 'vehicle.view'
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -130,6 +131,7 @@ class VehicleViewSet(TenantModelViewSet):
 
 
 class VehicleDocumentViewSet(TenantModelViewSet):
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
     queryset = VehicleDocument.objects.all().select_related('vehicle')
     serializer_class = VehicleDocumentSerializer
     required_permission = 'vehicle.view'

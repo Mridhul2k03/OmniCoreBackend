@@ -25,6 +25,7 @@ class TenantRoleCode(models.TextChoices):
     WAREHOUSE_USER = 'WAREHOUSE_USER', _('Warehouse & Inventory User')
     SALES_CRM_USER = 'SALES_CRM_USER', _('Sales & CRM User')
     DRIVER_FIELD_USER = 'DRIVER_FIELD_USER', _('Driver & Field User')
+    STAFF = 'STAFF', _('Staff')
 
 
 class Vertical(TimeStampedModel):

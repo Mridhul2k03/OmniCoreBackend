@@ -1,22 +1,27 @@
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import transaction
+from django.utils import timezone
 from apps.core.viewsets import TenantModelViewSet
+from apps.core.middleware import resolve_tenant_context
 
 from apps.courier.models import (
     Hub, CourierAgent, Shipment, ShipmentPickup, SortingRecord,
-    TrackingEvent, Delivery, ProofOfDelivery, CourierCommission,
-    CourierExpense, CourierPayout
+    TrackingEvent, Delivery, DeliveryAttempt, ProofOfDelivery, CourierCommission,
+    CourierExpense, CourierPayout, VerificationMethod, PayoutStatus, HubConvoy,
+    ShipmentStatus
 )
 from apps.courier.serializers import (
     HubSerializer, CourierAgentSerializer, ShipmentSerializer,
     ShipmentPickupSerializer, SortingRecordSerializer,
     TrackingEventSerializer, DeliverySerializer, ProofOfDeliverySerializer,
-    CourierCommissionSerializer, CourierExpenseSerializer, CourierPayoutSerializer
+    CourierCommissionSerializer, CourierExpenseSerializer, CourierPayoutSerializer,
+    HubConvoySerializer
 )
 from apps.courier.services import (
     ShipmentWorkflowService, HubSortingService, ProofOfDeliveryService,
-    CourierPayoutService
+    CourierPayoutService, HubConvoyService
 )
 
 
@@ -67,11 +72,113 @@ class ShipmentViewSet(TenantModelViewSet):
         events = shipment.tracking_events.all().order_by('timestamp')
         return Response(TrackingEventSerializer(events, many=True).data)
 
+    @action(detail=True, methods=['post'], url_path='attempts')
+    def record_attempt(self, request, pk=None):
+        shipment = self.get_object()
+        delivery = Delivery.objects.filter(tenant=shipment.tenant, shipment=shipment).first()
+        if not delivery:
+            return Response({'detail': 'Delivery task not found for this shipment.'}, status=status.HTTP_404_NOT_FOUND)
+        reason = str(request.data.get('reason', '')).strip()
+        if not reason:
+            return Response({'reason': ['This field is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        attempt_number = delivery.attempt_count + 1
+        attempt = DeliveryAttempt.objects.create(
+            tenant=shipment.tenant,
+            delivery=delivery,
+            attempt_number=attempt_number,
+            reason=reason[:100],
+            notes=str(request.data.get('agent_name', ''))[:500],
+        )
+        delivery.attempt_count = attempt_number
+        delivery.delivery_status = 'ATTEMPTED'
+        delivery.save(update_fields=['attempt_count', 'delivery_status', 'updated_at'])
+        shipment.status = 'DELIVERY_ATTEMPTED'
+        shipment.save(update_fields=['status', 'updated_at'])
+        TrackingEvent.objects.create(
+            tenant=shipment.tenant,
+            shipment=shipment,
+            event_type='DELIVERY_ATTEMPTED',
+            status=shipment.status,
+            location=shipment.delivery_city,
+            actor=request.user,
+            description=f'Delivery attempt {attempt_number}: {reason}',
+        )
+        return Response(ShipmentSerializer(shipment).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='assign-agent')
+    def assign_agent(self, request, pk=None):
+        shipment = self.get_object()
+        tenant, _ = resolve_tenant_context(request)
+        agent = CourierAgent.objects.filter(tenant=tenant, id=request.data.get('agent_id'), status='ACTIVE').first()
+        if not agent:
+            return Response({'agent_id': ['Select an active courier agent in this workspace.']}, status=status.HTTP_400_BAD_REQUEST)
+        if shipment.status not in [ShipmentStatus.SORTED, ShipmentStatus.DESTINATION_HUB, ShipmentStatus.OUT_FOR_DELIVERY, ShipmentStatus.DELIVERY_ATTEMPTED]:
+            return Response({'detail': 'Sort the shipment at a hub before assigning last-mile delivery.'}, status=status.HTTP_400_BAD_REQUEST)
+        shipment.assigned_agent = agent
+        shipment.status = ShipmentStatus.OUT_FOR_DELIVERY
+        shipment.save(update_fields=['assigned_agent', 'status', 'updated_at'])
+        delivery, _ = Delivery.objects.get_or_create(
+            tenant=tenant, shipment=shipment,
+            defaults={
+                'scheduled_delivery': shipment.expected_delivery.date() if shipment.expected_delivery else timezone.localdate(),
+                'delivery_address': shipment.delivery_address,
+                'recipient_name': shipment.receiver_name,
+                'recipient_phone': shipment.receiver_phone,
+            },
+        )
+        delivery.agent = agent
+        delivery.delivery_status = 'OUT_FOR_DELIVERY'
+        delivery.save(update_fields=['agent', 'delivery_status', 'updated_at'])
+        TrackingEvent.objects.create(
+            tenant=tenant, shipment=shipment, event_type='OUT_FOR_DELIVERY', status=shipment.status,
+            location=shipment.delivery_city, actor=request.user,
+            description=f'Assigned to courier agent {agent.display_name}.',
+        )
+        return Response(ShipmentSerializer(shipment).data)
+
 
 class ShipmentPickupViewSet(TenantModelViewSet):
     queryset = ShipmentPickup.objects.select_related('shipment', 'assigned_agent').all()
     serializer_class = ShipmentPickupSerializer
     filterset_fields = ['status', 'assigned_agent']
+
+    @action(detail=False, methods=['post'], url_path='batch')
+    def create_batch(self, request):
+        tenant, _ = resolve_tenant_context(request)
+        shipment = Shipment.objects.filter(tenant=tenant, id=request.data.get('shipment_id')).first()
+        if not shipment:
+            return Response({'shipment_id': ['Select a shipment in this workspace.']}, status=status.HTTP_400_BAD_REQUEST)
+        agent_id = request.data.get('assigned_agent_id')
+        agent = None
+        if agent_id:
+            agent = CourierAgent.objects.filter(tenant=tenant, id=agent_id, status='ACTIVE').first()
+            if not agent:
+                return Response({'assigned_agent_id': ['Select an active courier agent.']}, status=status.HTTP_400_BAD_REQUEST)
+        stops = request.data.get('stops')
+        if not isinstance(stops, list) or not stops or len(stops) > 30:
+            return Response({'stops': ['Provide between 1 and 30 pickup stops.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializers = []
+        for sequence, stop in enumerate(stops, start=1):
+            stop_data = {
+                'shipment': str(shipment.id), 'sequence': sequence,
+                'location_name': stop.get('location_name', ''), 'address': stop.get('address', ''),
+                'contact_name': stop.get('contact_name', ''), 'contact_phone': stop.get('contact_phone', ''),
+                'scheduled_time': stop.get('scheduled_time'), 'parcel_count': stop.get('parcel_count', 1),
+                'assigned_agent': str(agent.id) if agent else None,
+                'status': 'ASSIGNED' if agent else 'PENDING', 'notes': stop.get('notes', ''),
+            }
+            serializer = ShipmentPickupSerializer(data=stop_data)
+            serializer.is_valid(raise_exception=True)
+            serializers.append(serializer)
+        with transaction.atomic():
+            created = [serializer.save(tenant=tenant) for serializer in serializers]
+            if agent and shipment.status == ShipmentStatus.BOOKED:
+                ShipmentWorkflowService.transition_status(
+                    shipment, ShipmentStatus.PICKUP_ASSIGNED, actor=request.user,
+                    description=f'Pickup batch with {len(created)} sequenced stops assigned to {agent.display_name}.',
+                )
+        return Response(ShipmentPickupSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='assign')
     def assign(self, request, pk=None):
@@ -113,23 +220,24 @@ class SortingRecordViewSet(TenantModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='process')
     def process_sorting(self, request):
+        tenant, _ = resolve_tenant_context(request)
         shipment_id = request.data.get('shipment_id')
         source_hub_id = request.data.get('source_hub_id')
         destination_hub_id = request.data.get('destination_hub_id')
         sorting_category = request.data.get('sorting_category', 'STANDARD')
         notes = request.data.get('notes', '')
 
-        shipment = Shipment.objects.filter(tenant=self.tenant, id=shipment_id).first()
+        shipment = Shipment.objects.filter(tenant=tenant, id=shipment_id).first()
         if not shipment:
             return Response({'error': 'Shipment not found'}, status=status.HTTP_404_NOT_FOUND)
             
-        source_hub = Hub.objects.filter(tenant=self.tenant, id=source_hub_id).first()
+        source_hub = Hub.objects.filter(tenant=tenant, id=source_hub_id).first()
         if not source_hub:
             return Response({'error': 'Source Hub not found'}, status=status.HTTP_404_NOT_FOUND)
 
         dest_hub = None
         if destination_hub_id:
-            dest_hub = Hub.objects.filter(tenant=self.tenant, id=destination_hub_id).first()
+            dest_hub = Hub.objects.filter(tenant=tenant, id=destination_hub_id).first()
 
         record = HubSortingService.process_sorting(
             shipment=shipment,
@@ -140,6 +248,23 @@ class SortingRecordViewSet(TenantModelViewSet):
             notes=notes
         )
         return Response(SortingRecordSerializer(record).data, status=status.HTTP_201_CREATED)
+
+
+class HubConvoyViewSet(TenantModelViewSet):
+    queryset = HubConvoy.objects.select_related('origin_hub', 'destination_hub', 'vehicle', 'driver').prefetch_related('shipments').all()
+    serializer_class = HubConvoySerializer
+    filterset_fields = ['status', 'origin_hub', 'destination_hub']
+    required_permission = 'courier.dispatch'
+
+    @action(detail=True, methods=['post'], url_path='dispatch')
+    def dispatch(self, request, pk=None):
+        convoy = HubConvoyService.dispatch(self.get_object(), actor=request.user)
+        return Response(HubConvoySerializer(convoy).data)
+
+    @action(detail=True, methods=['post'], url_path='arrive')
+    def arrive(self, request, pk=None):
+        convoy = HubConvoyService.arrive(self.get_object(), actor=request.user)
+        return Response(HubConvoySerializer(convoy).data)
 
 
 class DeliveryViewSet(TenantModelViewSet):
@@ -156,6 +281,17 @@ class DeliveryViewSet(TenantModelViewSet):
     @action(detail=True, methods=['post'], url_path='verify-pod')
     def verify_pod(self, request, pk=None):
         delivery = self.get_object()
+        verification_method = str(request.data.get('verification_method', VerificationMethod.OTP)).upper()
+        if verification_method not in VerificationMethod.values:
+            return Response({'verification_method': ['Select a valid verification method.']}, status=status.HTTP_400_BAD_REQUEST)
+        pod, _ = ProofOfDelivery.objects.get_or_create(
+            tenant=delivery.tenant,
+            delivery=delivery,
+            defaults={'recipient_name': delivery.recipient_name, 'verification_method': verification_method},
+        )
+        if pod.verification_method != verification_method:
+            pod.verification_method = verification_method
+            pod.save(update_fields=['verification_method'])
         entered_otp = request.data.get('otp')
         recipient_name = request.data.get('recipient_name', delivery.recipient_name)
         signature_file = request.data.get('signature_file', '')
@@ -194,14 +330,29 @@ class CourierPayoutViewSet(TenantModelViewSet):
     serializer_class = CourierPayoutSerializer
     filterset_fields = ['agent', 'status']
 
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve(self, request, pk=None):
+        payout = self.get_object()
+        if payout.status not in [PayoutStatus.PENDING, PayoutStatus.PROCESSING]:
+            return Response({'detail': 'Only pending payouts can be approved.'}, status=status.HTTP_400_BAD_REQUEST)
+        payout.status = PayoutStatus.APPROVED
+        payout.save(update_fields=['status', 'updated_at'])
+        return Response(CourierPayoutSerializer(payout).data)
+
+    @action(detail=True, methods=['post'], url_path='pay')
+    def pay(self, request, pk=None):
+        payout = CourierPayoutService.pay_payout(self.get_object(), actor=request.user)
+        return Response(CourierPayoutSerializer(payout).data)
+
     @action(detail=False, methods=['post'], url_path='process')
     def process_payout(self, request):
+        tenant, _ = resolve_tenant_context(request)
         agent_id = request.data.get('agent_id')
         period_start = request.data.get('period_start')
         period_end = request.data.get('period_end')
         idempotency_key = request.data.get('idempotency_key')
 
-        agent = CourierAgent.objects.filter(tenant=self.tenant, id=agent_id).first()
+        agent = CourierAgent.objects.filter(tenant=tenant, id=agent_id).first()
         if not agent:
             return Response({'error': 'Courier Agent not found'}, status=status.HTTP_404_NOT_FOUND)
 

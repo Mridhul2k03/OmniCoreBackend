@@ -14,6 +14,7 @@ from apps.tenants.serializers import (
     PermissionSerializer,
     VerticalSerializer,
     TenantProvisionSerializer,
+    TenantProfileSerializer,
 )
 from apps.tenants.services import TenantProvisioningService
 from apps.core.permissions import IsPlatformAdmin, HasTenantAccess, HasPermission
@@ -26,7 +27,7 @@ class TenantProvisionView(APIView):
     POST /api/v1/platform/tenants/provision/
     Atomically provisions a new tenant organization, subscription, and admin account.
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsPlatformAdmin]
     serializer_class = TenantProvisionSerializer
 
     def post(self, request):
@@ -111,6 +112,34 @@ class PlatformTenantViewSet(viewsets.ModelViewSet):
         )
         return Response({'message': f"Tenant '{tenant.company_name}' has been activated."})
 
+    @action(detail=True, methods=['patch'], url_path='verticals')
+    def verticals(self, request, pk=None):
+        """Replace a tenant's licensed vertical list using UI vertical codes."""
+        codes = request.data.get('vertical_codes')
+        if not isinstance(codes, list) or any(not isinstance(code, str) or not code.strip() for code in codes):
+            return Response(
+                {'code': 'VALIDATION_ERROR', 'message': 'vertical_codes must be a list of non-empty strings.',
+                 'fields': {'vertical_codes': ['Provide a list of vertical codes.']}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        normalized_codes = list(dict.fromkeys(code.strip().lower() for code in codes))
+        verticals = []
+        for code in normalized_codes:
+            vertical, _ = Vertical.objects.get_or_create(
+                code=code,
+                defaults={'name': code.replace('_', ' ').title()},
+            )
+            if not vertical.is_active:
+                return Response(
+                    {'code': 'VALIDATION_ERROR', 'message': f"Vertical '{code}' is inactive.",
+                     'fields': {'vertical_codes': [f"'{code}' is not available."]}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            verticals.append(vertical)
+        tenant = self.get_object()
+        tenant.verticals.set(verticals)
+        return Response(TenantSerializer(tenant, context=self.get_serializer_context()).data)
+
 
 class TenantUserViewSet(viewsets.ModelViewSet):
     """
@@ -120,6 +149,23 @@ class TenantUserViewSet(viewsets.ModelViewSet):
     permission_classes = [HasTenantAccess, HasPermission]
     required_permission = 'tenant.manage'
     pagination_class = StandardPagination
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+            membership = getattr(request, 'tenant_user', None)
+            if not membership or not membership.is_primary or not membership.role or membership.role.code != 'TENANT_ADMIN':
+                from apps.core.exceptions import PermissionDeniedError
+                raise PermissionDeniedError(
+                    detail='Only the primary tenant administrator can manage employee access.',
+                    code='PRIMARY_ADMIN_REQUIRED',
+                )
+
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {'code': 'INVITATION_REQUIRED', 'message': 'Create employee accounts through the HR invitation flow.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     def get_queryset(self):
         tenant = getattr(self.request, 'tenant', None)
@@ -141,6 +187,10 @@ class RoleViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         tenant = getattr(self.request, 'tenant', None)
+        # Backfill the Staff template once for tenants created before that role existed.
+        if not Role.objects.filter(tenant=None, code='STAFF').exists():
+            from apps.tenants.services import seed_platform_roles_and_permissions
+            seed_platform_roles_and_permissions()
         return Role.objects.filter(models.Q(tenant=None) | models.Q(tenant=tenant)).prefetch_related('role_permissions__permission')
 
 
@@ -207,68 +257,3 @@ class TenantMetadataView(APIView):
             'modules': sorted(list(modules))
         })
 
-
-class PlatformTenantUpgradeView(APIView):
-    """
-    POST /api/v1/platform/tenants/<tenant_id>/upgrade/
-    Platform admin endpoint to upgrade/downgrade a tenant's subscription tier.
-    """
-    permission_classes = [IsPlatformAdmin]
-
-    def post(self, request, tenant_id=None):
-        from apps.subscriptions.services import SubscriptionUpgradeService
-        from apps.core.exceptions import BusinessValidationError
-
-        # Resolve tenant by public tenant_id or UUID
-        tenant = Tenant.objects.filter(tenant_id=str(tenant_id)).first()
-        if not tenant:
-            try:
-                import uuid
-                tenant = Tenant.objects.filter(id=uuid.UUID(str(tenant_id))).first()
-            except (ValueError, TypeError):
-                tenant = None
-        if not tenant:
-            raise BusinessValidationError(
-                "Tenant not found.",
-                code='TENANT_NOT_FOUND',
-                status_code=404,
-            )
-
-        package_code = request.data.get('package_tier', '').upper() or request.data.get('package_code', '').upper()
-        billing_cycle = request.data.get('billing_cycle')
-
-        if not package_code:
-            raise BusinessValidationError(
-                "package_tier or package_code is required.",
-                code='VALIDATION_ERROR',
-            )
-
-        # Normalize billing cycle
-        if billing_cycle:
-            mapping = {'monthly': 'MONTHLY', 'annually': 'YEARLY', 'yearly': 'YEARLY'}
-            billing_cycle = mapping.get(billing_cycle.lower(), billing_cycle.upper())
-
-        result = SubscriptionUpgradeService.upgrade(
-            tenant=tenant,
-            target_package_code=package_code,
-            billing_cycle=billing_cycle,
-            actor=request.user,
-        )
-
-        from apps.subscriptions.serializers import SubscriptionSerializer
-        sub = result['subscription']
-        pkg = result.get('target_package') or getattr(sub, 'package', None)
-        mrr = float(pkg.price_monthly) if (pkg and pkg.price_monthly) else 0.0
-
-        return Response({
-            'success': True,
-            'message': result['message'],
-            'data': {
-                'tenant_id': tenant.tenant_id,
-                'package_tier': package_code.lower(),
-                'mrr': mrr,
-                'features': result['effective_features'],
-                'effective_features': result['effective_features'],
-                'subscription': SubscriptionSerializer(sub).data,
-            }
-        })

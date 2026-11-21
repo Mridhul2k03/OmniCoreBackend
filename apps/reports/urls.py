@@ -4,11 +4,15 @@ from apps.reports.views import (
     TenantDashboardView,
     ExportVehiclesCSVView,
     ExportTripsCSVView,
+    ReportCategoriesView,
+    GenerateReportView,
 )
 
 app_name = 'reports'
 
 urlpatterns = [
+    path('reports/categories/', ReportCategoriesView.as_view(), name='report_categories'),
+    path('reports/generate/', GenerateReportView.as_view(), name='generate_report'),
     path('platform/dashboard/', PlatformDashboardView.as_view(), name='platform_dashboard'),
     path('dashboard/', TenantDashboardView.as_view(), name='tenant_dashboard'),
     path('reports/vehicles/csv/', ExportVehiclesCSVView.as_view(), name='export_vehicles_csv'),

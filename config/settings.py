@@ -153,6 +153,24 @@ if (BASE_DIR / 'static').exists():
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Employee invitation delivery. Local development prints links to the console;
+# production deployments must provide SMTP credentials through environment vars.
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'false').lower() in ['true', '1', 'yes']
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', str(not EMAIL_USE_SSL)).lower() in ['true', '1', 'yes']
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'OmniCore <no-reply@omnicore.io>')
+FRONTEND_BASE_URL = os.environ.get(
+    'FRONTEND_BASE_URL',
+    'http://localhost:5173' if DEBUG else 'https://omni-core-frontend-eta.vercel.app',
+).rstrip('/')
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -173,6 +191,11 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
     'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
     'PAGE_SIZE': 20,
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'registration_request': '5/hour',
+        'registration_verify': '10/hour',
+    },
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
@@ -228,6 +251,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:3000',
+    'https://omni-core-frontend-eta.vercel.app',
     'http://127.0.0.1:3000',
     'https://omnicore.io',
     'https://omni-core-frontend-eta.vercel.app',

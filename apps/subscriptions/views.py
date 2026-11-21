@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions, status
+from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from decimal import Decimal
@@ -10,7 +11,7 @@ from apps.subscriptions.services import (
     get_tenant_effective_features,
     SubscriptionUpgradeService,
 )
-from apps.core.permissions import HasTenantAccess, IsPlatformAdmin
+from apps.core.permissions import HasTenantAccess, HasPermission, IsPlatformAdmin
 from apps.core.exceptions import BusinessValidationError
 from apps.audit.services import AuditService
 from apps.tenants.models import Tenant
@@ -34,6 +35,13 @@ class TenantSubscriptionView(APIView):
     POST /api/v1/subscriptions/upgrade/
     """
     permission_classes = [HasTenantAccess]
+    required_permission = 'tenant.manage'
+
+    def get_permissions(self):
+        # Reading subscription details is available to tenant members; changes
+        # require the same tenant-management permission as other settings.
+        classes = [HasTenantAccess] if self.request.method == 'GET' else [HasTenantAccess, HasPermission]
+        return [permission() for permission in classes]
 
     def get(self, request):
         tenant = request.tenant
@@ -50,37 +58,43 @@ class TenantSubscriptionView(APIView):
         tenant = request.tenant
         package_code = request.data.get('package_code')
         billing_cycle = request.data.get('billing_cycle')
+        addon_codes = request.data.get('addon_codes')
 
-        if package_code:
-            result = SubscriptionUpgradeService.upgrade(
-                tenant=tenant,
-                target_package_code=package_code,
-                billing_cycle=billing_cycle,
-                actor=request.user
-            )
-            return Response({
-                'message': result['message'],
-                'subscription': SubscriptionSerializer(result['subscription']).data,
-                'effective_features': result['effective_features']
-            })
-
-        # Addons only
         subscription = getattr(tenant, 'subscription', None)
         if not subscription:
             raise BusinessValidationError("No active subscription found for tenant.")
 
-        addon_codes = request.data.get('addon_codes', [])
-        if addon_codes:
-            for a_code in addon_codes:
-                addon = Addon.objects.filter(code=a_code, is_active=True).first()
-                if addon:
-                    subscription.addons.add(addon)
-            subscription.save()
-            sync_tenant_features(tenant)
+        if package_code is None and addon_codes is None:
+            raise BusinessValidationError("Provide package_code and/or addon_codes.")
+
+        with transaction.atomic():
+            if package_code:
+                target_code = str(package_code).strip().upper()
+                if subscription.package.code != target_code or billing_cycle:
+                    result = SubscriptionUpgradeService.upgrade(
+                        tenant=tenant,
+                        target_package_code=target_code,
+                        billing_cycle=billing_cycle,
+                        actor=request.user
+                    )
+                    subscription = result['subscription']
+
+            if addon_codes is not None:
+                if not isinstance(addon_codes, list):
+                    raise BusinessValidationError("addon_codes must be a list.")
+                normalized_codes = {str(code).strip().lower() for code in addon_codes if str(code).strip()}
+                addons = list(Addon.objects.filter(is_active=True))
+                by_code = {addon.code.lower(): addon for addon in addons}
+                unknown = normalized_codes - set(by_code)
+                if unknown:
+                    raise BusinessValidationError(f"Unknown or inactive add-on code(s): {', '.join(sorted(unknown))}.")
+                subscription.addons.set([by_code[code] for code in sorted(normalized_codes)])
+                sync_tenant_features(tenant)
 
         return Response({
             'message': 'Subscription updated successfully.',
-            'subscription': SubscriptionSerializer(subscription).data
+            'subscription': SubscriptionSerializer(subscription).data,
+            'effective_features': get_tenant_effective_features(tenant)['effective_features'],
         })
 
 

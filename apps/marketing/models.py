@@ -14,10 +14,12 @@ class CampaignStatus(models.TextChoices):
 class Campaign(TenantOwnedModel):
     name = models.CharField(max_length=200)
     campaign_type = models.CharField(max_length=50, default='DIGITAL')
+    vertical_target = models.CharField(max_length=50, blank=True, default='freight_logistics')
     start_date = models.DateField()
     end_date = models.DateField()
     budget = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     spend = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    attributed_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0.00)
     status = models.CharField(max_length=30, choices=CampaignStatus.choices, default=CampaignStatus.DRAFT)
 
     def __str__(self):

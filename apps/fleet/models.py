@@ -247,6 +247,7 @@ class VehicleDocument(TenantOwnedModel):
     issue_date = models.DateField()
     expiry_date = models.DateField(db_index=True)
     file_path = models.CharField(max_length=500, blank=True, help_text="S3 tenant-scoped storage path")
+    file = models.FileField(upload_to='fleet/vehicle-documents/', blank=True, null=True)
     status = models.CharField(
         max_length=30,
         choices=DocumentStatus.choices,

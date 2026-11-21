@@ -1,5 +1,6 @@
 import uuid
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from django.contrib.auth import get_user_model
 from apps.tenants.models import Tenant, TenantUser, Role, Permission, Vertical, TenantStatus
 from apps.subscriptions.models import Package, Addon
@@ -30,7 +31,7 @@ class PermissionSerializer(serializers.ModelSerializer):
         fields = ['id', 'code', 'name', 'module', 'description']
 
 
-class TenantSerializer(serializers.ModelSerializer):
+class TenantSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     verticals = VerticalSerializer(many=True, read_only=True)
     package_name = serializers.CharField(source='package.name', read_only=True)
     tenant_id = serializers.CharField(required=False, allow_blank=True)
@@ -101,6 +102,12 @@ class TenantSerializer(serializers.ModelSerializer):
 
 
 
+class TenantProfileSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
+    class Meta:
+        model = Tenant
+        fields = ['company_name', 'email', 'phone', 'address']
+
+
 class TenantUserSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
     user_name = serializers.CharField(source='user.full_name', read_only=True)
@@ -113,13 +120,28 @@ class TenantUserSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_email', 'user_name', 'role', 'role_name',
             'is_primary', 'is_active', 'permissions', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'is_primary', 'user']
+
+    def validate_role(self, role):
+        current = getattr(self, 'instance', None)
+        if current and current.is_primary and role and current.role_id != role.id:
+            raise serializers.ValidationError('The primary administrator role cannot be changed here.')
+        if role and role.code == 'TENANT_ADMIN':
+            if not current or not current.is_primary or current.role_id != role.id:
+                raise serializers.ValidationError('The primary administrator role cannot be assigned to another member.')
+        return role
+
+    def validate_is_active(self, value):
+        current = getattr(self, 'instance', None)
+        if current and current.is_primary and not value:
+            raise serializers.ValidationError('The primary administrator membership cannot be deactivated here.')
+        return value
 
     def get_permissions(self, obj):
         return obj.get_all_permissions()
 
 
-class TenantProvisionSerializer(serializers.Serializer):
+class TenantProvisionSerializer(PhoneNumberValidationMixin, serializers.Serializer):
     company_name = serializers.CharField(max_length=255, required=True)
     admin_email = serializers.EmailField(required=True)
     admin_password = serializers.CharField(write_only=True, required=True, min_length=8)

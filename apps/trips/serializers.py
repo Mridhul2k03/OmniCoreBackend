@@ -1,3 +1,5 @@
+import uuid
+from django.utils import timezone
 from rest_framework import serializers
 from apps.trips.models import Booking, Route, Trip, TripExpense
 
@@ -10,6 +12,7 @@ class RouteSerializer(serializers.ModelSerializer):
 
 
 class BookingSerializer(serializers.ModelSerializer):
+    booking_number = serializers.CharField(required=False, allow_blank=True)
     customer_name = serializers.CharField(source='customer.company_name', read_only=True)
 
     class Meta:
@@ -17,9 +20,15 @@ class BookingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'booking_number', 'customer', 'customer_name', 'pickup_location',
             'dropoff_location', 'cargo_type', 'cargo_weight_kg', 'scheduled_date',
-            'commercial_rate', 'status', 'notes', 'created_at'
+            'commercial_rate', 'status', 'notes', 'vertical', 'vehicle_type', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
+
+    def create(self, validated_data):
+        if not validated_data.get('booking_number', '').strip():
+            today = timezone.localdate().strftime('%Y%m%d')
+            validated_data['booking_number'] = f"BK-{today}-{uuid.uuid4().hex[:12].upper()}"
+        return super().create(validated_data)
 
 
 class TripExpenseSerializer(serializers.ModelSerializer):

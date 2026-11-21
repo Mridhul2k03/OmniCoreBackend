@@ -1,11 +1,12 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from apps.shuttle.models import (
     ShuttleOrganization, ShuttleRoute, ShuttleStop, ShuttleSchedule,
     PassengerProfile, ShuttleAssignment, ShuttleTrip, ShuttleAttendance
 )
 
 
-class ShuttleOrganizationSerializer(serializers.ModelSerializer):
+class ShuttleOrganizationSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = ShuttleOrganization
         fields = [
@@ -29,16 +30,17 @@ class ShuttleStopSerializer(serializers.ModelSerializer):
 class ShuttleRouteSerializer(serializers.ModelSerializer):
     stops = ShuttleStopSerializer(many=True, read_only=True)
     organization_name = serializers.ReadOnlyField(source='organization.name')
+    organization_type = serializers.ReadOnlyField(source='organization.org_type')
 
     class Meta:
         model = ShuttleRoute
         fields = [
-            'id', 'organization', 'organization_name', 'base_route',
+            'id', 'organization', 'organization_name', 'organization_type', 'base_route',
             'route_name', 'route_code', 'direction', 'start_location',
             'end_location', 'default_vehicle', 'default_driver',
             'is_active', 'stops', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'organization_name', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization_name', 'organization_type', 'created_at', 'updated_at']
 
 
 class ShuttleScheduleSerializer(serializers.ModelSerializer):
@@ -54,7 +56,7 @@ class ShuttleScheduleSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'route_code']
 
 
-class PassengerProfileSerializer(serializers.ModelSerializer):
+class PassengerProfileSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     organization_name = serializers.ReadOnlyField(source='organization.name')
 
     class Meta:

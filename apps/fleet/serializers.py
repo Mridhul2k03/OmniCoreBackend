@@ -26,11 +26,13 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
 
 
 class VehicleDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.FileField(source='file', read_only=True)
+
     class Meta:
         model = VehicleDocument
         fields = [
             'id', 'vehicle', 'document_type', 'document_number',
-            'issue_date', 'expiry_date', 'file_path', 'status', 'notes', 'created_at'
+            'issue_date', 'expiry_date', 'file', 'file_url', 'file_path', 'status', 'notes', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
 
@@ -50,20 +52,12 @@ class VehicleSerializer(serializers.ModelSerializer):
     assigned_driver_name = serializers.CharField(source='assigned_driver.full_name', read_only=True)
     documents = VehicleDocumentSerializer(many=True, read_only=True)
 
-    # Legacy aliases (write-only so they don't conflict with model properties on serialization)
-    vin_number = serializers.CharField(source='vin', required=False, write_only=True)
-    odometer = serializers.DecimalField(source='odometer_km', max_digits=12, decimal_places=2, required=False, write_only=True)
-    payload_capacity_kg = serializers.DecimalField(source='capacity_kg', max_digits=10, decimal_places=2, required=False, write_only=True)
-
     class Meta:
         model = Vehicle
         fields = [
             'id', 'registration_number', 'category', 'category_name',
-            'branch', 'branch_name', 'assigned_driver', 'assigned_driver_name',
-            'vertical', 'type', 'make', 'model', 'year',
-            'vin', 'vin_number', 'status', 'availability', 'ownership',
-            'odometer_km', 'odometer', 'fuel_type', 'capacity_kg', 'payload_capacity_kg',
-            'temperature_sensor', 'fuel_level_percent', 'engine_oil_life_percent', 'ad_blue_level_percent',
+            'make', 'model', 'year', 'vin_number', 'status', 'availability',
+            'ownership', 'odometer', 'fuel_type', 'payload_capacity_kg',
             'documents', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
@@ -83,13 +84,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             t = m.tenant
             pkg = t.package.code.lower() if t.package else 'standard'
             tenants_data.append({
-                'id': str(t.id),
-                'tenant_id': t.tenant_id,
-                'name': t.company_name,
-                'company_name': t.company_name,
-                'slug': t.slug,
-                'package_tier': pkg,
-                'status': t.status.lower(),
+                'id': str(m.tenant.id),
+                'tenant_id': m.tenant.tenant_id,
+                'company_name': m.tenant.company_name,
+                'slug': m.tenant.slug,
+                'status': m.tenant.status,
                 'role': m.role.name if m.role else None,
                 'role_code': m.role.code if m.role else None,
                 'permissions': m.get_all_permissions(),
@@ -116,20 +115,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'first_name': user.first_name,
             'last_name': user.last_name,
             'full_name': user.full_name,
-            'is_platform_user': bool(user.is_platform_admin),
-            'is_platform_admin': bool(user.is_platform_admin),
-            'platform_role': user.platform_role if user.platform_role != 'NONE' else None,
-            'tenant_id': tenant_id,
-            'tenant_role': tenant_role,
-            'permissions': permissions,
-            'mfa_enabled': bool(user.is_mfa_enabled),
-            'status': 'active' if user.is_active else 'inactive',
+            'is_platform_admin': user.is_platform_admin,
+            'platform_role': user.platform_role,
         }
         data['tenants'] = tenants_data
         return data
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
 
     class Meta:

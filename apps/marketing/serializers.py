@@ -13,7 +13,10 @@ class CampaignSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Campaign
-        fields = ['id', 'name', 'campaign_type', 'start_date', 'end_date', 'budget', 'spend', 'status', 'metrics', 'created_at']
+        fields = [
+            'id', 'name', 'campaign_type', 'vertical_target', 'start_date', 'end_date',
+            'budget', 'spend', 'attributed_revenue', 'status', 'metrics', 'created_at'
+        ]
         read_only_fields = ['id', 'created_at']
 
 
@@ -41,11 +44,12 @@ class SocialChannelSerializer(serializers.ModelSerializer):
 
 class SocialAccountSerializer(serializers.ModelSerializer):
     api_key_or_token = serializers.CharField(write_only=True, required=False)
+    platform = serializers.CharField(source='channel.platform', read_only=True)
 
     class Meta:
         from apps.marketing.models import SocialAccount
         model = SocialAccount
-        fields = ['id', 'channel', 'account_name', 'account_id', 'is_connected', 'api_key_or_token', 'created_at']
+        fields = ['id', 'channel', 'platform', 'account_name', 'account_id', 'is_connected', 'api_key_or_token', 'created_at']
         read_only_fields = ['id', 'created_at']
 
     def create(self, validated_data):
@@ -64,12 +68,19 @@ class SocialCampaignSerializer(serializers.ModelSerializer):
 
 
 class SocialPostSerializer(serializers.ModelSerializer):
+    platform = serializers.CharField(source='social_account.channel.platform', read_only=True)
+    account_name = serializers.CharField(source='social_account.account_name', read_only=True)
+    campaign_name = serializers.SerializerMethodField()
+
+    def get_campaign_name(self, obj):
+        return obj.social_campaign.campaign.name if obj.social_campaign_id and obj.social_campaign else ''
+
     class Meta:
         from apps.marketing.models import SocialPost
         model = SocialPost
         fields = [
             'id', 'social_account', 'social_campaign', 'content', 'media_urls',
-            'scheduled_at', 'published_at', 'status', 'external_post_id',
+            'scheduled_at', 'published_at', 'status', 'external_post_id', 'platform', 'account_name', 'campaign_name',
             'performance', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']

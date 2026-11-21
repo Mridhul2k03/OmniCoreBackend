@@ -1,4 +1,5 @@
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -17,6 +18,7 @@ from apps.audit.services import AuditService
 
 
 class DriverViewSet(TenantModelViewSet):
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
     queryset = Driver.objects.all().select_related('current_vehicle').prefetch_related('documents')
     serializer_class = DriverSerializer
     required_permission = 'driver.view'
@@ -66,6 +68,7 @@ class DriverViewSet(TenantModelViewSet):
 
 
 class DriverDocumentViewSet(TenantModelViewSet):
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
     queryset = DriverDocument.objects.all().select_related('driver')
     serializer_class = DriverDocumentSerializer
     required_permission = 'driver.view'
