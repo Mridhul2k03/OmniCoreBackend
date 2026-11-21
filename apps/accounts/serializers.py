@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -36,6 +37,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'id': str(m.tenant.id),
                 'tenant_id': m.tenant.tenant_id,
                 'company_name': m.tenant.company_name,
+                'phone': m.tenant.phone,
                 'slug': m.tenant.slug,
                 'status': m.tenant.status,
                 'role': m.role.name if m.role else None,
@@ -50,6 +52,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'first_name': user.first_name,
             'last_name': user.last_name,
             'full_name': user.full_name,
+            'phone': user.phone,
             'is_platform_admin': user.is_platform_admin,
             'platform_role': user.platform_role,
         }
@@ -57,7 +60,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
 
     class Meta:

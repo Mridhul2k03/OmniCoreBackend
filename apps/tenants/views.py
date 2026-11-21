@@ -27,7 +27,7 @@ class TenantProvisionView(APIView):
     POST /api/v1/platform/tenants/provision/
     Atomically provisions a new tenant organization, subscription, and admin account.
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsPlatformAdmin]
     serializer_class = TenantProvisionSerializer
 
     def post(self, request):

@@ -7,11 +7,15 @@ from apps.accounts.views import (
     PasswordChangeView,
     PasswordResetRequestView,
     PasswordResetConfirmView,
+    RegistrationOTPView,
+    RegistrationOTPVerifyView,
 )
 
 app_name = 'accounts'
 
 urlpatterns = [
+    path('registration/request-otp/', RegistrationOTPView.as_view(), name='registration_request_otp'),
+    path('registration/verify-otp/', RegistrationOTPVerifyView.as_view(), name='registration_verify_otp'),
     path('login/', CustomTokenObtainPairView.as_view(), name='auth_login'),
     path('refresh/', CustomTokenRefreshView.as_view(), name='auth_refresh'),
     path('logout/', LogoutView.as_view(), name='auth_logout'),

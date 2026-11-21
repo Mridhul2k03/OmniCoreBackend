@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from apps.courier.models import (
     Hub, CourierAgent, Shipment, ShipmentParcel, PickupLocation,
     ShipmentPickup, SortingRecord, TrackingEvent, Delivery,
@@ -11,7 +12,7 @@ from django.db import transaction
 from apps.core.middleware import resolve_tenant_context
 
 
-class HubSerializer(serializers.ModelSerializer):
+class HubSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     current_parcels_count = serializers.SerializerMethodField()
     incoming_shipments_count = serializers.SerializerMethodField()
     pending_sorting_count = serializers.SerializerMethodField()
@@ -101,14 +102,14 @@ class ShipmentParcelSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class PickupLocationSerializer(serializers.ModelSerializer):
+class PickupLocationSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = PickupLocation
         fields = ['id', 'name', 'contact_person', 'contact_phone', 'address', 'city', 'postal_code', 'notes']
         read_only_fields = ['id']
 
 
-class ShipmentPickupSerializer(serializers.ModelSerializer):
+class ShipmentPickupSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     shipment_awb = serializers.CharField(source='shipment.awb_number', read_only=True)
     agent_name = serializers.CharField(source='assigned_agent.display_name', read_only=True, default='')
     destination_hub_name = serializers.CharField(source='shipment.destination_hub.name', read_only=True, default='')
@@ -162,7 +163,7 @@ class DeliveryAttemptSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'timestamp']
 
 
-class DeliverySerializer(serializers.ModelSerializer):
+class DeliverySerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     pod = ProofOfDeliverySerializer(read_only=True)
     attempts = DeliveryAttemptSerializer(many=True, read_only=True)
     shipment_awb = serializers.ReadOnlyField(source='shipment.awb_number')
@@ -177,7 +178,7 @@ class DeliverySerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'shipment_awb', 'attempt_count', 'created_at', 'updated_at']
 
 
-class ShipmentSerializer(serializers.ModelSerializer):
+class ShipmentSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     parcels = ShipmentParcelSerializer(many=True, required=False)
     pickups = ShipmentPickupSerializer(many=True, required=False)
     tracking_events = TrackingEventSerializer(many=True, read_only=True)

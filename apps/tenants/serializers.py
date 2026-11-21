@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from django.contrib.auth import get_user_model
 from apps.tenants.models import Tenant, TenantUser, Role, Permission, Vertical
 from apps.subscriptions.models import Package, Addon
@@ -29,7 +30,7 @@ class PermissionSerializer(serializers.ModelSerializer):
         fields = ['id', 'code', 'name', 'module', 'description']
 
 
-class TenantSerializer(serializers.ModelSerializer):
+class TenantSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     verticals = VerticalSerializer(many=True, read_only=True)
     package_name = serializers.CharField(source='package.name', read_only=True)
 
@@ -43,7 +44,7 @@ class TenantSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'tenant_id', 'slug', 'status', 'activated_at', 'created_at', 'updated_at']
 
 
-class TenantProfileSerializer(serializers.ModelSerializer):
+class TenantProfileSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Tenant
         fields = ['company_name', 'email', 'phone', 'address']
@@ -82,7 +83,7 @@ class TenantUserSerializer(serializers.ModelSerializer):
         return obj.get_all_permissions()
 
 
-class TenantProvisionSerializer(serializers.Serializer):
+class TenantProvisionSerializer(PhoneNumberValidationMixin, serializers.Serializer):
     company_name = serializers.CharField(max_length=255, required=True)
     admin_email = serializers.EmailField(required=True)
     admin_password = serializers.CharField(write_only=True, required=True, min_length=8)

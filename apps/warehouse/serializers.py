@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from apps.warehouse.models import (
     Warehouse,
     Supplier,
@@ -18,7 +19,7 @@ class WarehouseSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
-class SupplierSerializer(serializers.ModelSerializer):
+class SupplierSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Supplier
         fields = ['id', 'name', 'code', 'contact_person', 'email', 'phone', 'address', 'payment_terms_days', 'created_at']

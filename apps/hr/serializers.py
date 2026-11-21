@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.phone_validation import PhoneNumberValidationMixin
 from apps.hr.models import Employee, EmployeeInvitation, LeaveRequest, SalaryStructure, Payroll, EmploymentDocument
 from apps.tenants.models import Role, TenantUser
 
@@ -10,7 +11,7 @@ class EmploymentDocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'uploaded_at']
 
 
-class EmployeeSerializer(serializers.ModelSerializer):
+class EmployeeSerializer(PhoneNumberValidationMixin, serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
     documents = EmploymentDocumentSerializer(many=True, read_only=True)
     role = serializers.SerializerMethodField()
@@ -62,7 +63,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         return invitation.status.lower()
 
 
-class EmployeeInvitationSerializer(serializers.Serializer):
+class EmployeeInvitationSerializer(PhoneNumberValidationMixin, serializers.Serializer):
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100)
     email = serializers.EmailField()
